@@ -1,4 +1,4 @@
-// Isolated Linux UI smoke: requires weston, never uses the desktop display or capture hardware.
+// Isolated UI smoke: private headless Weston on Linux, native Windows CI desktop.
 import {spawn} from 'node:child_process';
 import {mkdtempSync, openSync, existsSync, readFileSync, rmSync, closeSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -87,7 +87,9 @@ try {
  await wait(250);
  assert.equal(await evaluate('document.getElementById("job-status").textContent.includes("unsupported format")'),true);
  await evaluate(`document.querySelector('[aria-label="Dismiss error"]').click()`);
+ await until(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==="Crop" && !b.disabled)'),'crop control enabled');
  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="Crop").click()');
+ await until(()=>evaluate('Boolean(document.querySelector(".crop-handle.h-nw"))'),'crop handles rendered');
  await evaluate('(() => {const h=document.querySelector(".crop-handle.h-nw");h.focus();h.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));return true;})()');
  await until(()=>evaluate('document.querySelector(".crop-box").style.left === "1%"'),'crop keyboard updates selection');
  await evaluate(`window.Host.call("export-panorama",{output_path:${JSON.stringify(join(temporary,'cancelled.tif'))},width:1024,height:8192,multiband:false})`);
