@@ -89,12 +89,18 @@ test('real worker: invalid start does not claim a job and oversized integers nev
  assert.equal(worker.events.filter(e=>e.event==='job-state').length,0);
 });
 test('real worker: mutation gate, responsive cancel, and no stale image resurrection',async t=>{
- const{worker,a,b}=await fixture(t);await worker.success('load-images',{paths:[a,b],replace:true});
+ const{worker,a,b,directory}=await fixture(t);await worker.success('load-images',{paths:[a,b],replace:true});
  worker.events=[];
- assert.equal((await worker.call('auto-align',{})).ok,true);
- assert.equal((await worker.call('clear-images')).ok,false);
- assert.equal((await worker.call('load-images',{paths:[a]})).ok,false);
- assert.equal((await worker.call('job-cancel')).ok,true);await worker.idle();
+ // Queue the probes before awaiting replies. A tiny blank-image alignment may
+ // finish before the next host round trip on an optimized Apple Silicon build.
+ const [started,clear,load,cancel]=await Promise.all([
+  worker.call('export-panorama',{output_path:join(directory,'cancelled-gate.tif'),width:1024,height:8192,multiband:false}),
+  worker.call('clear-images'),
+  worker.call('load-images',{paths:[a]}),
+  worker.call('job-cancel'),
+ ]);
+ assert.equal(started.ok,true);assert.equal(clear.ok,false);assert.equal(load.ok,false);
+ assert.equal(cancel.ok,true);await worker.idle();
  const doc=await worker.success('snapshot-project');assert.equal(doc.images.length,2);
  await worker.success('clear-images');const cleared=await worker.success('snapshot-project');assert.equal(cleared.images.length,0);
 });
