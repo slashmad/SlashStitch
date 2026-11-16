@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,writeFileSync,rmSync,linkSync,readdirSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,toNamespacedPath} from 'node:path';
 import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 import {build} from 'esbuild';
@@ -20,6 +20,13 @@ test('atomic project write preserves old data on serialization failure and prote
  assert.ok(!readdirSync(temporary).some(p=>p.endsWith('.part')));
 });
 const sha='a'.repeat(40),xml=Buffer.from('<lensdatabase><lens><maker>Test</maker><model>50mm</model></lens></lensdatabase>');
+test('source protection accepts native namespaced paths and still rejects source aliases',()=>{
+ const source=join(temporary,'namespaced-source.png'),destination=join(temporary,'namespaced-project.ssp');
+ writeFileSync(source,'original');
+ assert.doesNotThrow(()=>protectSources(destination,[toNamespacedPath(source)]));
+ assert.throws(()=>protectSources(source,[toNamespacedPath(source)]),/source image/);
+ assert.equal(readFileSync(source,'utf8'),'original');
+});
 const blob=createHash('sha1').update(`blob ${xml.length}\0`).update(xml).digest('hex');
 function fetcher({badHash=false,httpError=false}={}){return async url=>{
  if(url.includes('/commits/'))return Response.json({sha});

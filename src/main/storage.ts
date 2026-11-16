@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 
 export function protectSources(destination: string, sources: string[]): void {
-  const target = join(realpathSync(dirname(resolve(destination))), basename(destination));
+  // The native implementation supports Rust's Windows verbatim paths (\\?\C:\...).
+  const target = join(realpathSync.native(dirname(resolve(destination))), basename(destination));
   const metadata = existsSync(destination) ? statSync(destination, { bigint: true }) : null;
   for (const source of sources) {
-    const canonical = existsSync(source) ? realpathSync(source) : resolve(source);
+    const canonical = existsSync(source) ? realpathSync.native(source) : resolve(source);
     const sourceMetadata = metadata && existsSync(source) ? statSync(source, { bigint: true }) : null;
     if (canonical === target || (metadata && sourceMetadata && metadata.dev === sourceMetadata.dev && metadata.ino === sourceMetadata.ino)) throw new Error("The destination is a source image or a link to one.");
   }

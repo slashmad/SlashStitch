@@ -166,7 +166,13 @@ async function saveProject(ui: unknown, saveAs = false): Promise<WorkerReply> {
   protectSources(path, ((document.images ?? []) as Array<{ path: string }>).map(im => im.path));
   mkdirSync(dirname(path), { recursive: true });
   const diskDocument=structuredClone(document);
-  for(const image of (diskDocument.images??[]) as Array<{path:string}>) image.path=relative(dirname(path),image.path)||image.path;
+  // Resolve directory aliases too (/var -> /private/var on macOS, junctions on Windows).
+  // Both sides must use the same canonical base for portable source-relative paths.
+  const documentDir=realpathSync.native(dirname(resolve(path)));
+  for(const image of (diskDocument.images??[]) as Array<{path:string}>) {
+    const source=existsSync(image.path)?realpathSync.native(image.path):resolve(image.path);
+    image.path=relative(documentDir,source)||source;
+  }
   writeJsonAtomic(path, diskDocument);
   recovery = document; projectFile = path; dirty = false;
   rmSync(recoveryFile, { force: true }); savedRecovery = null;
@@ -233,7 +239,7 @@ app.whenReady().then(() => {
       const url = new URL(request.url);
       const rel = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
       const target = resolve(previewRoot, ...rel);
-      const inside = relative(realpathSync(previewRoot), realpathSync(target));
+      const inside = relative(realpathSync.native(previewRoot), realpathSync.native(target));
       if (url.host !== "session" || !inside || inside.startsWith("..") || isAbsolute(inside) || extname(target).toLowerCase() !== ".png") return new Response("Not found", { status: 404 });
       return await net.fetch(pathToFileURL(target).toString());
     } catch { return new Response("Not found", { status: 404 }); }

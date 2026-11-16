@@ -8,6 +8,8 @@
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "setup:electron": "node node_modules/electron/install.js",
     "build:engine": "node scripts/build-engine.mjs",
     "build:engine:release": "node scripts/build-engine.mjs",
     "stage:engine": "node scripts/stage-engine.mjs",
