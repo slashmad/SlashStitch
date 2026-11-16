@@ -8,6 +8,7 @@ pub mod features;
 pub mod files;
 pub mod image_meta;
 pub mod lensfun;
+pub mod memory;
 pub mod optics;
 pub mod optimizer;
 pub mod photometric;
@@ -43,6 +44,6 @@ pub use optimizer::{
 pub use photometric::{estimate_photometric, PhotometricParams};
 pub use project::{ControlPoint, LensProjection, PanoramaProjection, SourceImage, StitchProject};
 pub use render::{
-    compute_seam_map, Interpolation, RenderInput, RenderPlan, SeamMap, SourceRef,
-    DEFAULT_BLEND_WIDTH_DEG,
+    compute_seam_map, compute_seam_map_within, Interpolation, RenderInput, RenderPlan, SeamMap,
+    SourceRef, DEFAULT_BLEND_WIDTH_DEG,
 };

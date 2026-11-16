@@ -429,7 +429,10 @@ fn engine_info(shared: &SharedState) -> Value {
         "supported_bit_depths": SUPPORTED_BIT_DEPTHS,
         "supported_color_profiles": SUPPORTED_COLOR_PROFILE_IDS,
         "max_icc_bytes": MAX_ICC_BYTES,
-        "max_images": MAX_IMAGES
+        "max_images": MAX_IMAGES,
+        "memory_limit_bytes": slashstitch_core::memory::memory_limit(),
+        "memory_reserved_bytes": slashstitch_core::memory::reserved_bytes(),
+        "source_cache_bytes": shared.source_cache.held_bytes()
     })
 }
 fn pose_for(meta: &SourceImageMeta, id: usize, db: &LensDatabase) -> Result<SourceImage, String> {
@@ -946,6 +949,13 @@ fn execute(
                 .collect();
             for batch_idx in sources::budget_batches(&sizes) {
                 check_cancel(shared)?;
+                // Reserve the batch's decode memory on this (non-pool) thread before the
+                // parallel section, so no rayon worker ever blocks on the memory ceiling.
+                let _memory = slashstitch_core::memory::reserve(
+                    batch_idx.iter().map(|&k| sizes[k]).sum::<u64>() * sources::DECODE_BYTES_PER_PX,
+                    Some(&shared.cancel),
+                )
+                .ok_or("Cancelled")?;
                 let batch: Vec<String> = batch_idx.iter().map(|&k| queued[k].clone()).collect();
                 let decoded: Vec<Result<_, String>> = batch
                     .par_iter()
@@ -1133,6 +1143,11 @@ fn execute(
                 .collect();
             for batch_idx in sources::budget_batches(&sizes) {
                 check_cancel(shared)?;
+                let _memory = slashstitch_core::memory::reserve(
+                    batch_idx.iter().map(|&k| sizes[k]).sum::<u64>() * sources::DECODE_BYTES_PER_PX,
+                    Some(&shared.cancel),
+                )
+                .ok_or("Cancelled")?;
                 let batch: Vec<usize> = batch_idx.iter().map(|&k| to_decode[k]).collect();
                 let results: Vec<Result<_, String>> = batch
                     .par_iter()
@@ -2034,8 +2049,8 @@ fn render_seam_overlay(
     {
         return Err("Invalid region".into());
     }
-    let width = dimensions(p, "width", 1024, 4096)?.max(16);
-    let height = dimensions(p, "height", 512, 4096)?.max(16);
+    let mut width = dimensions(p, "width", 1024, 4096)?.max(16);
+    let mut height = dimensions(p, "height", 512, 4096)?.max(16);
     let selected = p
         .get("selected")
         .and_then(Value::as_u64)
@@ -2071,7 +2086,19 @@ fn render_seam_overlay(
         seams: seams.as_deref(),
     };
     let colors = source_colors(doc.images.len());
-    let plan = RenderPlan::new(&input);
+    // The overlay is a single band: lower its resolution until pass A fits the budget (the
+    // UI scales the image; seams and frames stay at their positions).
+    let budget = slashstitch_core::memory::band_budget();
+    let mut input = input;
+    let mut plan = RenderPlan::new(&input);
+    while width > 256 && height > 128 && plan.label_band_bytes(&input, 0, height as usize) > budget
+    {
+        width = width * 7 / 10;
+        height = height * 7 / 10;
+        input.out_w = width;
+        input.out_h = height;
+        plan = RenderPlan::new(&input);
+    }
     let rgba = plan
         .seam_overlay(&input, selected, &colors, Some(cancel))
         .ok_or("Cancelled")?;
@@ -2221,8 +2248,13 @@ fn render_exact_preview(
         Some(cancel),
     )
     .ok_or("Cancelled")?;
+    // Large views (zoom detail on high-DPI screens) render in budgeted bands like exports.
     let (px, valid) = plan
-        .render_rows(&input, 0, height, Some(cancel))
+        .render_all_within(
+            &input,
+            slashstitch_core::memory::band_budget(),
+            Some(cancel),
+        )
         .ok_or("Cancelled")?;
     let w = width as usize;
     let mut rgba = vec![0u8; w * height as usize * 4];

@@ -425,6 +425,46 @@ impl RenderPlan {
         Some(())
     }
 
+    /// Render all rows in bands sized to `budget` (same banding rules as the export), so a
+    /// large exact preview never needs more memory than one band. Returns `None` if cancelled.
+    pub fn render_all_within(
+        &self,
+        input: &RenderInput<'_>,
+        budget: u64,
+        cancel: Option<&AtomicBool>,
+    ) -> Option<(Vec<[f32; 3]>, Vec<bool>)> {
+        let h = input.out_h;
+        let align = self.align.max(8);
+        let pad = if input.multiband { self.pad } else { 0 };
+        let row_bytes = u64::from(input.out_w) * band_bytes_per_px(self.projectors.len());
+        let fit = (budget / row_bytes.max(1)) as u32;
+        let rows = if fit > 2 * pad + align {
+            ((fit - 2 * pad) / align * align).max(align)
+        } else {
+            align
+        };
+        if rows >= h {
+            return self.render_rows(input, 0, h, cancel);
+        }
+        let n = input.out_w as usize * h as usize;
+        let mut px = Vec::with_capacity(n);
+        let mut valid = Vec::with_capacity(n);
+        let mut y = 0;
+        while y < h {
+            let y1 = (y + rows).min(h);
+            let (p, v) = self.render_rows(input, y, y1, cancel)?;
+            px.extend(p);
+            valid.extend(v);
+            y = y1;
+        }
+        Some((px, valid))
+    }
+
+    /// Whether a global coarse layer is in use (diagnostics).
+    pub fn has_coarse(&self) -> bool {
+        self.coarse.is_some()
+    }
+
     /// Raster level(s) for a sample whose footprint covers `footprint` full-resolution
     /// source pixels per output pixel: the finest level at or above one level pixel per
     /// output pixel, blended with the next coarser one (trilinear) for seamless transitions.
@@ -541,25 +581,35 @@ impl RenderPlan {
         if self.projectors.is_empty() || wi == 0 || strip_h == 0 {
             return Some((vec![[0.0; 3]; wi * strip_h], vec![false; wi * strip_h]));
         }
-        if !input.multiband || self.projectors.len() == 1 || wi < 32 || input.out_h < 32 {
+        let feather = !input.multiband || self.projectors.len() == 1 || wi < 32 || input.out_h < 32;
+        // Hold a share of the process memory ceiling for this band (waits if other work holds it).
+        let rows = if feather {
+            strip_h as u64
+        } else {
+            strip_h as u64 + 2 * u64::from(self.pad)
+        };
+        let per_px = if feather {
+            32
+        } else {
+            band_bytes_per_px(self.projectors.len())
+        };
+        let _memory = crate::memory::reserve(rows * wi as u64 * per_px, cancel)?;
+        if feather {
             return self.render_feather(input, y_start, y_end, cancel);
         }
         self.render_multiband(input, y_start, y_end, cancel)
     }
 
-    /// Pass A of the multi-band renderer for rows `[band_y0, band_y1)`: per-pixel seam owner
-    /// (after transient rejection) and each image's samples/weights inside its column ROI.
-    fn label_band(
+    /// Column range (ROI) of every source within rows `[band_y0, band_y1)`: a sparse
+    /// coverage scan, densified for sources that are small on this canvas.
+    fn scan_rois(
         &self,
         input: &RenderInput<'_>,
         band_y0: usize,
         band_y1: usize,
-        cancel: Option<&AtomicBool>,
-    ) -> Option<LabelBand> {
-        let cancelled = || cancel.is_some_and(|c| c.load(Ordering::Relaxed));
+    ) -> Vec<Option<(usize, usize)>> {
         let wi = input.out_w as usize;
         let a = self.align as usize;
-        let band_h = band_y1 - band_y0;
         let n = self.projectors.len();
         // Coarse coverage scan for per-image column ranges.
         let stride = 8usize;
@@ -628,6 +678,36 @@ impl RenderPlan {
             roi[i] = Some((x0, x1.min(wi)));
         }
 
+        roi
+    }
+
+    /// Bytes pass A allocates for rows `[band_y0, band_y1)`: labels plus per-source samples
+    /// and weights inside each ROI. Exact (from the ROI scan), computed before allocating.
+    pub fn label_band_bytes(&self, input: &RenderInput<'_>, band_y0: usize, band_y1: usize) -> u64 {
+        let band_h = (band_y1 - band_y0) as u64;
+        let roi_cols: u64 = self
+            .scan_rois(input, band_y0, band_y1)
+            .iter()
+            .flatten()
+            .map(|(x0, x1)| (x1 - x0) as u64)
+            .sum();
+        band_h * (u64::from(input.out_w) * 2 + roi_cols * 16)
+    }
+
+    /// Pass A of the multi-band renderer for rows `[band_y0, band_y1)`: per-pixel seam owner
+    /// (after transient rejection) and each image's samples/weights inside its column ROI.
+    fn label_band(
+        &self,
+        input: &RenderInput<'_>,
+        band_y0: usize,
+        band_y1: usize,
+        cancel: Option<&AtomicBool>,
+    ) -> Option<LabelBand> {
+        let cancelled = || cancel.is_some_and(|c| c.load(Ordering::Relaxed));
+        let wi = input.out_w as usize;
+        let band_h = band_y1 - band_y0;
+        let n = self.projectors.len();
+        let roi = self.scan_rois(input, band_y0, band_y1);
         // Pass A: label (seam owner) per pixel and per-image samples inside each ROI.
         let mut label = vec![u16::MAX; wi * band_h];
         let mut img_rgb: Vec<Vec<[f32; 3]>> = Vec::with_capacity(n);
@@ -767,6 +847,7 @@ impl RenderPlan {
         if wi == 0 || h == 0 || self.projectors.is_empty() {
             return Some(vec![0; wi * h * 4]);
         }
+        let _memory = crate::memory::reserve(self.label_band_bytes(input, 0, h), cancel)?;
         let LabelBand {
             label,
             img_cov,
@@ -1275,11 +1356,60 @@ pub fn compute_seam_map(
     corridor_deg: f64,
     cancel: Option<&AtomicBool>,
 ) -> Option<SeamMap> {
+    compute_seam_map_within(
+        template,
+        grid_w,
+        corridor_deg,
+        crate::memory::band_budget(),
+        cancel,
+    )
+}
+
+/// [`compute_seam_map`] with an explicit memory budget for pass A.
+pub fn compute_seam_map_within(
+    template: &RenderInput<'_>,
+    grid_w: usize,
+    corridor_deg: f64,
+    budget: u64,
+    cancel: Option<&AtomicBool>,
+) -> Option<SeamMap> {
     let aspect = template.view.canvas_aspect.unwrap_or(2.0).clamp(0.1, 20.0);
-    // Same cell budget as a 2:1 canvas `grid_w` wide, whatever the canvas aspect.
-    let cells = (grid_w * grid_w / 2) as f64;
-    let gw = ((cells * aspect).sqrt().round() as usize).clamp(16, grid_w * 2);
-    let gh = ((cells / aspect).sqrt().round() as usize).clamp(16, grid_w * 2);
+    // Same cell budget as a 2:1 canvas `grid_w` wide, whatever the canvas aspect; the grid
+    // shrinks until pass A fits the memory budget (exact size from the ROI scan, computed
+    // before anything is allocated). Without a fitting grid the centre seams are kept.
+    let mut width = grid_w;
+    let (gw, gh) = loop {
+        let cells = (width * width / 2) as f64;
+        let gw = ((cells * aspect).sqrt().round() as usize).clamp(16, width * 2);
+        let gh = ((cells / aspect).sqrt().round() as usize).clamp(16, width * 2);
+        let probe = RenderInput {
+            out_w: gw as u32,
+            out_h: gh as u32,
+            projection: template.projection,
+            pano_hfov_deg: template.pano_hfov_deg,
+            view: BandViewParams {
+                crop: [0.0, 0.0, 1.0, 1.0],
+                canvas_aspect: Some(aspect),
+                ..template.view
+            },
+            images: template.images,
+            sources: template.sources.clone(),
+            photometric: template.photometric,
+            multiband: true,
+            trc: template.trc,
+            interpolation: Interpolation::Bilinear,
+            blend_width_deg: DEFAULT_BLEND_WIDTH_DEG,
+            reject_transients: false,
+            seams: None,
+        };
+        if RenderPlan::new(&probe).label_band_bytes(&probe, 0, gh) <= budget {
+            break (gw, gh);
+        }
+        if width <= 1024 {
+            return None;
+        }
+        width = (width * 7 / 10).max(1024);
+    };
     let input = RenderInput {
         out_w: gw as u32,
         out_h: gh as u32,
@@ -1304,6 +1434,7 @@ pub fn compute_seam_map(
     if plan.projectors.len() < 2 {
         return None;
     }
+    let _memory = crate::memory::reserve(plan.label_band_bytes(&input, 0, gh), cancel)?;
     let LabelBand {
         mut label,
         img_rgb,
@@ -2170,6 +2301,34 @@ mod tests {
             "test setup: centre seam must cross the blob ({before})"
         );
         assert_eq!(after, 0, "optimised seam still cuts the differing content");
+    }
+
+    #[test]
+    fn seam_layout_grid_shrinks_to_fit_its_memory_budget() {
+        let trc = TargetTrc::srgb();
+        let images = vec![src(0, 0.0), src(1, 40.0)];
+        let rasters = vec![textured(1, 0.2, &trc), textured(5, 0.3, &trc)];
+        let mut inp = input(&images, &rasters, &trc, 1024, 512, true);
+        inp.projection = PanoramaProjection::Equirectangular;
+        inp.view = BandViewParams {
+            crop: [0.0, 0.0, 1.0, 1.0],
+            canvas_aspect: Some(2.0),
+            ..Default::default()
+        };
+        let full = compute_seam_map_within(&inp, 2048, 6.0, u64::MAX, None).unwrap();
+        assert_eq!((full.w, full.h), (2048, 1024));
+        // Measure what the full grid needs, then allow about half of it.
+        let probe = inp_full(&inp, 2048, 1024);
+        let need = RenderPlan::new(&probe).label_band_bytes(&probe, 0, 1024);
+        let small = compute_seam_map_within(&inp, 2048, 6.0, need / 2, None).unwrap();
+        assert!(
+            small.w < 2048 && small.w >= 1024,
+            "grid {}x{}",
+            small.w,
+            small.h
+        );
+        // No grid fits a tiny budget: the optimisation is skipped (centre seams are used).
+        assert!(compute_seam_map_within(&inp, 2048, 6.0, 1024, None).is_none());
     }
 
     fn inp_full<'a>(inp: &RenderInput<'a>, w: usize, h: usize) -> RenderInput<'a> {

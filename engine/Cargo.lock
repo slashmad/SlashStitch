@@ -1619,6 +1619,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "kamadak-exif",
+ "libc",
  "libm",
  "memmap2",
  "moxcms",
@@ -1630,6 +1631,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tiff",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1651,12 +1653,14 @@ name = "slashstitch-worker"
 version = "0.1.0"
 dependencies = [
  "image",
+ "libc",
  "rayon",
  "serde",
  "serde_json",
  "slashstitch-core",
  "slashstitch-gpu",
  "tempfile",
+ "windows-sys",
 ]
 
 [[package]]

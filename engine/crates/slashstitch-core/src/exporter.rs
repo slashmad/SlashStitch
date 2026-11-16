@@ -277,6 +277,22 @@ where
     plan.prepare_coarse(&input, band_budget(), cancel)
         .ok_or(ExportError::Cancelled)?;
     let strip_rows = choose_strip_rows(options, &plan, images.len())?;
+    if std::env::var_os("SLASHSTITCH_TRACE_MEMORY").is_some() {
+        let pad = if options.multiband { plan.pad } else { 0 };
+        let per_px = crate::render::band_bytes_per_px(images.len());
+        eprintln!(
+            "memory-model export {}x{} images={} levels={} rows={} pad={} band_est={} budget={} coarse={}",
+            options.width,
+            options.height,
+            images.len(),
+            plan.levels,
+            strip_rows,
+            pad,
+            u64::from(options.width) * u64::from(strip_rows + 2 * pad) * per_px,
+            band_budget(),
+            plan.has_coarse(),
+        );
+    }
     let renderer = StripRenderer {
         input: &input,
         plan: &plan,
@@ -513,46 +529,8 @@ pub fn preflight_export(options: &ExportOptions, image_count: usize) -> Result<(
     Ok(())
 }
 
-/// Memory budget for one render band (and for the global coarse layer): at most 1.5 GiB and
-/// at most 40 % of both the available memory and the process address-space limit (Linux),
-/// so a constrained machine or container refuses an export instead of aborting.
-pub fn band_budget() -> u64 {
-    memory_budgets().0
-}
+pub use crate::memory::{band_budget, band_hard_limit};
 
-/// Hard ceiling for one band: never more than 80 % of available memory / address space.
-pub fn band_hard_limit() -> u64 {
-    memory_budgets().1
-}
-
-/// `(soft, hard)` band budgets from MemAvailable and the address-space rlimit (Linux).
-fn memory_budgets() -> (u64, u64) {
-    let mut budget: u64 = 1536 * 1024 * 1024;
-    let mut hard: u64 = 3 * 1536 * 1024 * 1024;
-    if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
-        if let Some(kb) = info
-            .lines()
-            .find(|l| l.starts_with("MemAvailable:"))
-            .and_then(|l| l.split_whitespace().nth(1))
-            .and_then(|v| v.parse::<u64>().ok())
-        {
-            budget = budget.min(kb * 1024 * 2 / 5);
-            hard = hard.min(kb * 1024 * 4 / 5);
-        }
-    }
-    if let Ok(limits) = std::fs::read_to_string("/proc/self/limits") {
-        if let Some(bytes) = limits
-            .lines()
-            .find(|l| l.starts_with("Max address space"))
-            .and_then(|l| l.split_whitespace().nth(3))
-            .and_then(|v| v.parse::<u64>().ok())
-        {
-            budget = budget.min(bytes * 2 / 5);
-            hard = hard.min(bytes * 4 / 5);
-        }
-    }
-    (budget.max(64 * 1024 * 1024), hard.max(64 * 1024 * 1024))
-}
 /// Largest full output buffer for formats that cannot be written in strips.
 const FULL_BUFFER_LIMIT: u64 = 512 * 1024 * 1024;
 
