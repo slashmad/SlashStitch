@@ -15,7 +15,7 @@ jobs:
         include:
           - {os: ubuntu-22.04, name: Linux x64, package: linux}
           - {os: windows-2025, name: Windows x64, package: win}
-          - {os: macos-15, name: macOS arm64, package: mac}
+          - {os: macos-26, name: macOS arm64, package: mac}
           - {os: macos-15-intel, name: macOS x64, package: mac}
     runs-on: ${{ matrix.os }}
     env:
