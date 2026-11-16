@@ -11,12 +11,6 @@ import { protectSources, writeJsonAtomic } from "./storage";
 import { downloadLensfunSnapshot } from "./lensfun-update";
 
 app.setName("SlashStitch");
-// One running instance per data profile. A second launch would share (and clean up) the
-// first instance's source cache and recovery file; it focuses the running window instead.
-if (!app.requestSingleInstanceLock()) {
-  app.exit(0);
-  process.exit(0);
-}
 const userData = app.getPath("userData");
 const settingsFile = join(userData, "settings.json");
 const recoveryFile = join(userData, "recovery.ssp");
@@ -33,6 +27,14 @@ if (process.platform === "linux") {
   if (backend !== "wayland" && backend !== "x11") throw new Error("SLASHSTITCH_DISPLAY must be auto, wayland or x11");
   app.commandLine.appendSwitch("ozone-platform", backend);
   if (backend === "wayland") app.commandLine.appendSwitch("disable-features", "Vulkan");
+}
+
+// Set the display backend before requesting the lock: Electron may initialize Ozone
+// while opening its single-instance channel, before app.whenReady().
+// A second instance must exit before it can clean up the first instance's cache.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+  process.exit(0);
 }
 
 const previewRoot = mkdtempSync(join(tmpdir(), "slashstitch-session-"));

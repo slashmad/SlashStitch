@@ -24,7 +24,7 @@ for(const pkg of data.packages.filter(p=>active.has(`${p.name}@${p.version}`)&&p
    const manifest=JSON.parse(readFileSync(join(supplemental,'SOURCE.json'),'utf8'));
    if(manifest.name!==pkg.name||manifest.version!==pkg.version)throw new Error('Supplemental notice identity mismatch');
    licenseRoot=supplemental;files.push(...manifest.files.map(f=>f.name));
-   for(const file of manifest.files){if(createHash('sha256').update(readFileSync(join(supplemental,file.name))).digest('hex')!==file.sha256)throw new Error('Supplemental notice checksum mismatch');}
+   for(const file of manifest.files){if(createHash('sha256').update(readFileSync(join(supplemental,file.name))).digest('hex')!==file.sha256)throw new Error(`Supplemental notice checksum mismatch: ${pkg.name}@${pkg.version}/${file.name}`);}
   }else{missing.push({name:pkg.name,version:pkg.version,repository:pkg.repository,manifest_path:pkg.manifest_path,license:pkg.license});continue;}
  }
  inventory.push({name:pkg.name,version:pkg.version,license:pkg.license,authors:pkg.authors,repository:pkg.repository,files});

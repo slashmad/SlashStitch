@@ -19,6 +19,7 @@ let display,application,socket;
 try {
  const env={...process.env,XDG_RUNTIME_DIR:temporary,WAYLAND_DISPLAY:'slashapp-test',SLASHSTITCH_DISPLAY:'wayland'};
  delete env.ELECTRON_RUN_AS_NODE;
+ delete env.DISPLAY;
  display=spawn('weston',['--backend=headless-backend.so','--socket=slashapp-test','--idle-time=0','--width=1440','--height=900'],{env,stdio:['ignore',log,log]});
  display.on('error',error=>console.error(error.message));
  await until(()=>existsSync(join(temporary,'slashapp-test')),'headless Wayland socket');
@@ -26,7 +27,7 @@ try {
  // --no-sandbox is restricted to this throwaway integration test, never start.mjs or packaged config.
  application=spawn(process.env.SLASHSTITCH_TEST_EXECUTABLE || require('electron'),[
    ...(process.env.SLASHSTITCH_TEST_EXECUTABLE?[]:[resolve('.')]),
-   '--no-sandbox','--disable-gpu','--remote-debugging-port=0',`--user-data-dir=${userData}`
+   '--ozone-platform=wayland','--no-sandbox','--disable-gpu','--remote-debugging-port=0',`--user-data-dir=${userData}`
  ],{env,stdio:['ignore',log,log]});
  application.on('error',error=>console.error(error.message));
  const portFile=join(userData,'DevToolsActivePort');
