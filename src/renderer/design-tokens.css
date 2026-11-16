@@ -1,0 +1,51 @@
+/* Gemensamma design tokens för Slash*-familjen (SlashCAD, SlashPCB, SlashOBD, SlashREC, SlashVID).
+   Kompakt 13 px systemfont, platta paneler, tunna 1 px-linjer. Mörkt är standard.
+   Byt endast --accent / --accent-2 / --accent-bg / --accent-text per app. */
+
+:root {
+  --bg: #16181d;
+  --panel: #1d2027;
+  --panel-2: #23272f;
+  --panel-3: #2a2f39;
+  --line: #2e333d;
+  --line-2: #3a404c;
+  --text: #dfe3ea;
+  --muted: #8b93a1;
+
+  /* App-accent (exempel: SlashCAD/PCB #3b82f6, SlashOBD #2fb8cc, SlashREC #f59e0b, SlashVID #a855f7) */
+  --accent: #3b82f6;
+  --accent-2: #2563eb;
+  --accent-bg: #1c2d4a;
+  --accent-text: #ffffff;
+
+  --ok: #34c77b;
+  --warn: #f2a93b;
+  --warn-bg: #2b2415;
+  --warn-line: #4a3d1f;
+  --bad: #ef5a5a;
+  --bad-bg: #3a1f22;
+  --bad-line: #6b2a2f;
+  --code: #14161b;
+  --shadow: 0 10px 34px #0007;
+
+  color-scheme: dark;
+  font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif;
+}
+
+:root[data-theme="light"] {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --panel-2: #f1f3f6;
+  --panel-3: #e6e9ee;
+  --line: #d9dde4;
+  --line-2: #c3c9d3;
+  --text: #1c2129;
+  --muted: #667085;
+  --warn-bg: #fdf3dc;
+  --warn-line: #ecd49a;
+  --bad-bg: #fde8e8;
+  --bad-line: #f1b5b5;
+  --code: #f1f3f6;
+  --shadow: 0 10px 30px #0002;
+  color-scheme: light;
+}

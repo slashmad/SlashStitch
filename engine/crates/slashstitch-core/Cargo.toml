@@ -1,0 +1,21 @@
+[package]
+name = "slashstitch-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "webp", "rayon"] }
+kamadak-exif = "0.6"
+libm = "0.2"
+memmap2 = "0.9"
+moxcms = "0.8"
+nalgebra = "0.35"
+rayon = "1.12"
+roxmltree = "0.21"
+same-file = "1"
+serde = { version = "1.0", features = ["derive"] }
+tempfile = "3"
+thiserror = "2.0"
+tiff = "0.11"

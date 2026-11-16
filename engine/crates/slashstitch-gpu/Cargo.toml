@@ -1,0 +1,16 @@
+[package]
+name = "slashstitch-gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bytemuck = { version = "1.25", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "webp", "rayon"] }
+libm = "0.2"
+nalgebra = "0.35"
+pollster = "1.0"
+rayon = "1.12"
+slashstitch-core = { path = "../slashstitch-core" }
+wgpu = "30.0"

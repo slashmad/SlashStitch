@@ -1,0 +1,145 @@
+@import "./design-tokens.css";
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+.app { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; overflow: hidden; }
+.topbar { min-height:40px; flex-wrap:wrap; padding-top:4px; padding-bottom:4px; grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; color: #a9c4ff; }
+.proj { font-weight: 600; padding: 2px 8px; background: var(--panel-2); border-radius: 4px; }
+.grow { flex: 1; }
+.left-panel, .right-panel { background: var(--panel); padding: 10px; overflow: auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.center { position: relative; min-width: 0; overflow: hidden; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.splitter { cursor: col-resize; background: var(--line); }
+.splitter:hover { background: var(--accent); }
+
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 50; background: rgba(22, 24, 29, 0.82);
+  display: flex; align-items: center; justify-content: center; pointer-events: none;
+}
+.drop-box {
+  padding: 28px 40px; border: 2px dashed var(--accent); border-radius: 10px;
+  background: var(--panel); color: var(--text); font-size: 16px; font-weight: 600;
+}
+
+button, select, input { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--line-2); background: var(--panel-3); }
+button:disabled { opacity: .45; cursor: default; }
+button.mini { padding: 2px 6px; font-size: 12px; }
+
+.muted { color: var(--muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.meta-pill, .status-pill { font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+.status-bad { font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); }
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; }
+.image-list, .db-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.image-item { padding: 6px 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; }
+.image-item.active { border-color: var(--accent); background: var(--accent-bg); }
+.image-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-sub, .image-lens { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.viewport-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seg-group { display: inline-flex; gap: 2px; }
+.inline-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.inline-field input[type="range"] { padding: 0; width: 110px; }
+.viewport-canvas {
+  position: relative; flex: 1; border: 1px solid var(--line); border-radius: 6px;
+  background: radial-gradient(circle at center, #1e2430 0%, #14161b 100%);
+  display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: grab;
+}
+.viewport-canvas:active { cursor: grabbing; }
+.equirect-grid {
+  position: absolute; inset: 0; opacity: 0.22; pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--line-2) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line-2) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.preview-frame { position: relative; flex: 0 0 auto; user-select: none; box-shadow: 0 0 0 1px rgba(255,255,255,0.06); }
+.preview-img { width: 100%; height: 100%; display: block; object-fit: fill; user-select: none; pointer-events: none; }
+.preview-detail { position: absolute; display: block; object-fit: fill; user-select: none; pointer-events: none; }
+.seam-overlay { z-index: 2; image-rendering: pixelated; }
+.crop-overlay { position: absolute; inset: 0; pointer-events: none; }
+.crop-shade { position: absolute; background: rgba(10, 12, 16, 0.62); }
+.crop-box { position: absolute; border: 1px dashed rgba(169, 196, 255, 0.85); box-sizing: border-box; pointer-events: none; }
+.crop-box.editable { pointer-events: auto; cursor: move; border: 1.5px solid #a9c4ff; }
+.crop-handle { position: absolute; width: 10px; height: 10px; background: #a9c4ff; border: 1px solid #16181d; border-radius: 2px; pointer-events: auto; }
+.crop-handle.h-n { top: -5px; left: 50%; transform: translateX(-50%); width: 24px; height: 7px; cursor: ns-resize; }
+.crop-handle.h-s { bottom: -5px; left: 50%; transform: translateX(-50%); width: 24px; height: 7px; cursor: ns-resize; }
+.crop-handle.h-w { left: -5px; top: 50%; transform: translateY(-50%); width: 7px; height: 24px; cursor: ew-resize; }
+.crop-handle.h-e { right: -5px; top: 50%; transform: translateY(-50%); width: 7px; height: 24px; cursor: ew-resize; }
+.crop-handle.h-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.crop-handle.h-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.crop-handle.h-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.crop-handle.h-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.viewport-overlay { position: relative; text-align: center; max-width: 480px; padding: 16px; }
+.progress-banner {
+  position: absolute; left: 16px; right: 16px; bottom: 16px;
+  background: rgba(22, 24, 29, 0.9); border: 1px solid var(--line-2); border-radius: 6px; padding: 8px 12px;
+}
+.progress-wrap { height: 6px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.progress-bar { height: 100%; background: var(--accent); transition: width 120ms linear; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.tab { flex: 1; text-align: center; font-size: 12px; }
+.tab.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+.inspector-body { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+.inspector-body h3 { margin: 4px 0; font-size: 13px; }
+.kv { display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 4px 8px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
+.pose-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pose-grid label, .stack-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.pose-grid input, .stack-field select { width: 100%; color: var(--text); }
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+.check-row input { width: auto; }
+.search-input { width: 100%; }
+.db-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); }
+.db-kind { font-size: 11px; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; background: var(--panel-3); color: var(--accent); }
+.export-row { display: flex; gap: 6px; }
+
+fieldset.inspector-body { border:0; padding:0; margin:0; min-width:0; }
+.error-banner { position:absolute; left:20px; right:20px; bottom:16px; z-index:100; display:flex; align-items:center; gap:12px; padding:10px; max-height:140px; overflow:auto; background:var(--bad-bg); color:var(--bad); border:1px solid var(--bad-line); border-radius:6px; }
+.error-banner span { flex:1; white-space:pre-wrap; overflow-wrap:anywhere; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.proj { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.inspector-body:disabled { opacity:.75; }
+
+.status-bad { display:inline-block; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Projection picker with shape icons */
+.projection-picker { position: relative; }
+.projection-button {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 250px; height: 30px; padding: 0 10px;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 6px; cursor: pointer;
+  text-align: left; font: inherit; font-size: 13px;
+}
+.projection-button:hover:not(:disabled) { border-color: var(--accent); }
+.projection-button:disabled { opacity: 0.55; cursor: default; }
+.projection-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.projection-caret { opacity: 0.7; }
+.projection-icon { flex: 0 0 auto; color: var(--accent); }
+.projection-list {
+  position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 100%; margin: 0; padding: 4px; list-style: none;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  max-height: 70vh; overflow-y: auto;
+}
+.projection-option { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 13px; white-space: nowrap; outline: none; }
+.projection-option.active { background: var(--panel-3); }
+.projection-option.selected { background: var(--accent-bg); color: var(--accent-text); }
+.projection-option.selected .projection-icon { color: var(--accent-text); }
+
+/* Stitch mode and advanced stitching */
+.stitch-mode { display: grid; gap: 4px; margin: 6px 0 2px; }
+.stitch-mode .small { font-size: 11.5px; line-height: 1.35; }
+.advanced-stitch { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px 6px; margin: 4px 0; }
+.advanced-stitch summary { cursor: pointer; font-size: 12.5px; padding: 2px 0; }
+.advanced-stitch[open] summary { margin-bottom: 4px; }
+.inline-select { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; font-size: 12.5px; margin: 4px 0; }
+
+/* Status text never changes the toolbar layout (no wrapping feedback into the viewport size). */
+.toolbar-status { flex: 1 1 0; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stitch-mode select, .inline-select select { min-width: 0; width: 100%; }
+.advanced-stitch, .stitch-mode { min-width: 0; max-width: 100%; }
+.projection-button.is-disabled { opacity: 0.55; cursor: default; }

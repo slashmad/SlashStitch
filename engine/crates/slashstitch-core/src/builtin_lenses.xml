@@ -1,0 +1,13 @@
+<lensdatabase version="1">
+    <lens>
+        <maker>Sigma</maker>
+        <model>15mm F1.4 DG DN DIAGONAL FISHEYE | Art 024</model>
+        <mount>Sony E</mount>
+        <mount>Leica L</mount>
+        <cropfactor>1.0</cropfactor>
+        <type>equisolid</type>
+        <calibration>
+            <distortion model="ptlens" focal="15" a="0.0" b="0.0" c="0.0"/>
+        </calibration>
+    </lens>
+</lensdatabase>

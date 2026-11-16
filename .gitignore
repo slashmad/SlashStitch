@@ -1,0 +1,30 @@
+node_modules/
+dist/
+release/
+build/bin/
+build/notices/
+build/validation/
+engine/target/
+*.log
+
+.build-tools/
+.env
+.env.*
+__pycache__/
+*.pyc
+*.tar.gz
+
+# Local sample photos and session/project memory artifacts
+testbilder/
+AI_CONTEXT.md
+docs/project-memory/
+
+# Local test projects, exports and camera originals (never versioned)
+/*.ssp
+/*.tif
+/*.tiff
+/*.psb
+*.ARW
+*.arw
+*.dng
+*.DNG
