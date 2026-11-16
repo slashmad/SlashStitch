@@ -13,9 +13,19 @@ const bytes=readFileSync(source);
 const metadataPath=join('engine','target','release','engine-build.json');
 if(!existsSync(metadataPath))throw new Error('Missing verified engine-build.json. Run npm run build:engine.');
 const metadata=JSON.parse(readFileSync(metadataPath,'utf8'));
+if(metadata.platform!==process.platform||metadata.arch!==process.arch)throw new Error('Worker build platform/architecture differs from the package host');
 if(createHash('sha256').update(bytes).digest('hex')!==metadata.sha256)throw new Error('Worker differs from verified release build');
 if(process.platform==='linux'&&(metadata.glibc_max!=='2.28'||bytes.subarray(0,4).toString('hex')!=='7f454c46'))throw new Error('Linux worker must be the verified GLIBC 2.28 ELF build');
 if(process.platform==='win32'&&bytes.subarray(0,2).toString()!=='MZ')throw new Error('Expected a Windows worker');
+if(process.platform==='win32'){
+ const pe=bytes.readUInt32LE(0x3c);
+ const expected=process.arch==='arm64'?0xaa64:0x8664;
+ if(bytes.toString('ascii',pe,pe+4)!=='PE\0\0'||bytes.readUInt16LE(pe+4)!==expected)throw new Error('Windows worker machine type mismatch');
+}
+if(process.platform==='darwin'){
+ const expected=process.arch==='arm64'?0x0100000c:0x01000007;
+ if(bytes.readUInt32LE(0)!==0xfeedfacf||bytes.readUInt32LE(4)!==expected)throw new Error('Expected a native 64-bit Mach-O worker');
+}
 const outDir = join("build", "bin");
 mkdirSync(outDir, { recursive: true });
 const target = join(outDir, exe);

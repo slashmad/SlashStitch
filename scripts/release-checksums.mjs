@@ -1,0 +1,12 @@
+import {createHash} from 'node:crypto';
+import {readdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+const {version}=JSON.parse(readFileSync('package.json','utf8'));
+const os={linux:'linux',win32:'win',darwin:'mac'}[process.platform];
+const prefix=`SlashStitch-${version}-${os}-${process.arch}`;
+const files=readdirSync('release').filter(f=>f.startsWith(prefix)&&/\.(AppImage|deb|rpm|exe|dmg|zip)$/.test(f)).sort();
+const expected=process.platform==='linux'?3:process.platform==='win32'?3:2;
+if(files.length!==expected)throw new Error(`Expected ${expected} ${prefix} installers, found ${files.length}`);
+const sums=files.map(f=>`${createHash('sha256').update(readFileSync(join('release',f))).digest('hex')}  ${f}`).join('\n')+'\n';
+writeFileSync(join('release',`${prefix}-SHA256SUMS.txt`),sums);
+console.log(sums);

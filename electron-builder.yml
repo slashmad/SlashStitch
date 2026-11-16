@@ -22,23 +22,25 @@ linux:
   maintainer: slashmad
   synopsis: Open-source panorama stitcher powered by Rust & Lensfun
 deb:
+  artifactName: SlashStitch-${version}-linux-${env.SLASHSTITCH_ARCH}.deb
   depends: ["libgtk-3-0 | libgtk-3-0t64", "libnss3", "libxss1", "libasound2 | libasound2t64"]
 rpm:
+  artifactName: SlashStitch-${version}-linux-${env.SLASHSTITCH_ARCH}.rpm
   depends: ["gtk3", "nss", "libXScrnSaver", "alsa-lib"]
 appImage:
-  artifactName: SlashStitch-${version}-${arch}.AppImage
+  artifactName: SlashStitch-${version}-linux-${env.SLASHSTITCH_ARCH}.AppImage
 win:
   icon: build/icon.ico
   target: [nsis, portable, zip]
-  artifactName: SlashStitch-${version}-win-${arch}.${ext}
+  artifactName: SlashStitch-${version}-win-${env.SLASHSTITCH_ARCH}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  artifactName: SlashStitch-Setup-${version}.exe
+  artifactName: SlashStitch-${version}-win-${env.SLASHSTITCH_ARCH}-setup.exe
 portable:
-  artifactName: SlashStitch-Portable-${version}.exe
+  artifactName: SlashStitch-${version}-win-${env.SLASHSTITCH_ARCH}-portable.exe
 mac:
-  icon: build/icon.png
+  icon: build/icon.icns
   category: public.app-category.photography
   target: [dmg, zip]
-  artifactName: SlashStitch-${version}-mac-${arch}.${ext}
+  artifactName: SlashStitch-${version}-mac-${env.SLASHSTITCH_ARCH}.${ext}

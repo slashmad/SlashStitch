@@ -1,84 +1,157 @@
-# SlashStitch
+<p align="center">
+  <img src="slashstitch-icon.png" width="160" alt="SlashStitch icon">
+</p>
 
-An open-source panorama workbench using Electron, React and a native Rust worker. The application includes feature matching, spherical rotation RANSAC, robust bundle adjustment, interactive projections and cropping, GPU preview with CPU fallback, and atomic panorama export.
+<h1 align="center">SlashStitch</h1>
 
-## Working with panoramas
+<p align="center">
+  An open-source panorama workbench for landscapes, night skies and the images in between.
+</p>
 
-Add JPEG, PNG, TIFF or WebP images with **Add Images** or drag and drop. Import failures are listed explicitly. EXIF orientation is normalized for preview, matching and export. Auto Align requires a connected set of overlapping images; failed alignment preserves the previous geometry. Automatic leveling fits the camera sweep: review the horizon before exporting.
+<p align="center">
+  <a href="https://github.com/slashmad/SlashStitch/releases/latest">Download</a> ·
+  <a href="docs/USER_GUIDE.md">User guide</a> ·
+  <a href="https://github.com/slashmad/SlashStitch/issues">Report a problem</a>
+</p>
 
-Use **Open**, **Save** and **Save As** for versioned `.ssp` projects. Projects include sources, geometry, control points, projection, crop and export settings; source images remain separate. Relative paths allow moving a project together with its source folders. Missing or changed sources produce an error without partially replacing the open project. Closing unsaved work offers Save, Discard or Cancel. A recovery snapshot is retained after unexpected worker/application failure, and a disconnected engine can be restarted explicitly.
+![Build and package](https://github.com/slashmad/SlashStitch/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
-Shortcuts: Ctrl/Cmd+O adds images, Ctrl/Cmd+Shift+O opens a project, Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as, Ctrl/Cmd+Z/Shift+Z undo/redo, Ctrl/Cmd+Shift+A aligns, and Ctrl/Cmd+E opens Export. Source selection, panel splitters and crop handles support keyboard controls. Use arrow keys on a focused crop handle; Shift makes smaller adjustments.
+SlashStitch brings image alignment, lens correction, projection, cropping and panorama export
+into one desktop application. A native Rust engine handles the image processing; the Electron
+and React interface provides a live workbench with GPU preview and full-resolution detail.
 
-### Preview and blending
+![SlashStitch aligning ten aurora photographs, with source frames, blend seams and optimizer results](docs/images/optimizer.png)
 
-- The viewport first shows a fast GPU preview (feathered blend of preview-size sources) while you interact. When interaction pauses, it is replaced by an **exact preview** rendered by the same engine as the export: exposure/vignetting correction, multi-band blending and the same colour pipeline. When you zoom in past the preview resolution, the visible region is rendered 1:1 from full-resolution sources. The status line states which preview is shown.
-- **Exposure, white balance & vignetting compensation** (Export tab, on by default) estimates per-image, per-channel gains and a radial vignetting model per lens from the overlaps, and applies them identically in preview and export. The parameters are saved in the project and re-estimated when the geometry changes.
-- Multi-band blending chooses its number of pyramid levels from the output's angular resolution, so preview and export blend over the same angular width. Seams follow the highest edge-distance weight; each image's pyramid is extrapolated beyond its coverage so no black borders bleed into the blend. Strip-wise export is verified to match a single-band render.
-- Exact previews and exports resample with the Panorama Tools **Spline36** kernel (6×6, interpolating, minimal ringing around stars); the fast interactive preview uses bilinear sampling.
-- Deep multi-band pyramids (high-resolution exports) blend their coarse levels once for the whole canvas (anti-aliased, 4× oversampled) and only the fine levels per strip, keeping strip padding small.
-- Vignetting correction follows the measured curve only up to the largest radius where overlaps provide evidence and is held constant beyond it (no extrapolation into the extreme corners).
-- **Seams** (viewport toolbar) overlays a coloured frame around the area each source covers (thicker for the selected source; the source list shows the same colours) and white lines where the blend switches source. It uses the same seam labels as the export. Seams follow the source that sees each direction closest to its optical centre (sharpest, least vignetted), faded out near frame borders.
-- **Stitch mode** (Export tab): presets over the advanced settings, saved with the project — *Balanced* (multi-band 3°, Spline36, optimised seams, exposure + vignetting, transient removal), *Night sky & aurora* (wide 6° transitions), *Sharp detail* (narrow 1.5°, Lanczos3) and *Fast draft* (feather, bilinear, centre-line seams, gains only). **Advanced stitching** exposes blending (multi-band/feather), transition width (1.5–10°), interpolation (Spline36, Lanczos3, bilinear) and vignetting correction; any change shows the mode as *Custom*.
-- The projection menu shows a small shape icon per projection (transverse variants rotated).
-- **Optimise seams** (Export tab, on by default): instead of a fixed line between image centres, each seam between two neighbouring frames is routed through the part of their overlap where they agree best (dynamic programming over a ±8° corridor on locally averaged, exposure-corrected colour differences, with a small pull towards the centre line and a small price per sideways step). The layout is computed once per geometry for the whole canvas and shared by the exact preview, zoom, the Seams overlay and the export.
-- **Remove transient light** (Export tab, on by default): where three or more frames overlap and one of them is markedly brighter *and* shows higher relative contrast than the others (a torch hitting a rock, a passing car), that area is taken from the best-covering frame that agrees with the majority. With only two overlapping frames nothing is replaced.
-- Each sample picks its source resolution from the local footprint (trilinear between pyramid levels), so downscaled exports average noise instead of aliasing it; at 1:1 or larger the full-resolution source is used.
+> **Status: early development, 0.1.0.** Linux has been exercised with real image sets and
+> local desktop tests. The build workflow also runs native worker tests and produces Windows
+> and macOS packages. Building and automated tests do not qualify every GPU, driver or desktop
+> environment. Windows and macOS installers are unsigned; macOS builds are not notarized.
 
-### Image and resource contract
+## What it does
 
-- Sources up to 16 bits per channel keep their precision through blending. Output can be **8, 10 or 16 bits per channel** (10-bit is stored in RGB16 with 1024 levels; JPEG supports 8-bit only) in sRGB, Adobe RGB, Display P3, ProPhoto RGB, Rec.2020 or a custom/source RGB ICC profile. Pixels are converted to the target profile and that profile is embedded. A custom or adopted ICC profile is embedded byte-for-byte; it is only replaced by a built-in profile when primaries, white point and tone curves are colorimetrically identical. LUT-only ICC profiles without RGB tone curves are rejected as targets. 8-bit sources exported at 10/16 bits do not regain lost precision. Non-RGB ICC sources and transparent sources must be converted/flattened first. RAW and HDR are not supported.
-- A new project adopts the sources' colour space when every source embeds the same RGB profile (for example Adobe RGB), so wide-gamut colour is not clipped to sRGB by default; mixed or missing profiles keep sRGB. The status line reports the adoption and the Export tab can change it.
-- The canvas aspect ratio is part of the project, so resizing the window never changes exported geometry or a saved crop. Equirectangular projections use a fixed 2:1 (transverse 1:2) canvas.
-- Full-resolution sources are decoded in parallel within a memory budget (about 40 % of available memory, at most 6 GiB; `SLASHSTITCH_DECODE_BUDGET_MB` overrides), colour-converted once and kept as a disk-backed resolution pyramid under the application data directory for the session. Exact previews and every export reuse it. Plan disk space of roughly 8 bytes per source pixel. A source changed on disk after loading is detected (size and modification time) and must be reloaded; cached data is never mixed with a changed file.
-- Export sizes are checked before any source is decoded or any large buffer is allocated. The band memory budget adapts to the machine (at most 1.5 GiB, and at most 40 % of available memory and of the process address-space limit; hard ceiling 80 %), so a constrained machine refuses an impossible export with a clear message instead of aborting. The global coarse blending layer of deep exports is part of that budget and can be cancelled.
-- Upper limits keep large projects from taking the machine down. All large working buffers (decoding, render bands, the coarse layer, seam layouts, exact previews) draw from one process-wide memory ceiling: 90 % of physical memory by default (`SLASHSTITCH_MEMORY_LIMIT_MB` overrides). Each reservation also checks the live free memory and waits while granting it would leave less than 5 % of physical memory (at least 1 GiB) for the OS and other programs; work that does not fit waits instead of pushing the system into swap. The source cache may use up to 90 % of the usable disk space on its filesystem, always leaving at least 2 GiB free (`SLASHSTITCH_CACHE_LIMIT_GB` overrides); least recently used pyramids that no render holds are evicted first, and a project that cannot fit is refused with a clear message. Limits only queue or refuse work — they never change the rendered result.
-- One SlashStitch instance runs per data profile; starting it again focuses the running window (the session's source cache and recovery file are never shared or removed under a running instance).
-- TIFF/BigTIFF output uses bounded horizontal strips sized to a band memory budget. PNG/JPEG additionally require a complete output buffer, limited to 512 MiB.
-- At most 128 sources and 20,000 retained control points per project. Source dimensions have a decode budget; export dimensions are checked before integer conversion and allocation. Oversized GPU storage buffers use the CPU preview instead of crashing.
-- Export protects source file identities, including links. An existing destination requires confirmation. Rendering, cancellation and encoding errors preserve the previous output; publication uses an atomic replacement. Keep Crop Aspect is enabled by default; preview geometry is retained even when output dimensions differ.
-- Lensfun geometric corrections support PTLens, Poly3 and Poly5 with focal interpolation and calibration crop scaling. Supported source projections are rectilinear, equidistant/circular fisheye, equisolid and equirectangular. Unsupported source profile projections are reported rather than silently interpreted as rectilinear.
+- **Align overlapping photographs:** feature matching, rotation RANSAC and robust bundle
+  adjustment, with optional lens calibration, horizon leveling and sky/star weighting.
+- **Choose the view:** 13 panorama projections, including equirectangular, cylindrical,
+  Mercator, rectilinear, Panini, stereographic, fisheye and transverse variants.
+- **Inspect the stitch:** fast GPU preview with CPU fallback, an exact preview after
+  interaction pauses, full-resolution detail when zoomed in, and source-frame/seam overlays.
+- **Blend and correct:** multi-band or feather blending, content-aware seams, exposure and
+  white-balance matching, vignetting correction and optional transient-light rejection.
+  Balanced, Night sky & aurora, Sharp detail and Fast draft presets group the settings.
+- **Control colour and precision:** 8-, 10- or 16-bit output with sRGB, Adobe RGB, Display P3,
+  ProPhoto RGB, Rec.2020 or a supported custom/source RGB ICC profile.
+- **Export panoramas:** TIFF/BigTIFF, PNG and JPEG, with cancellation, atomic output and
+  protection against overwriting source photographs. Large TIFFs render in strips.
+- **Save the work:** `.ssp` projects, relative source paths, Undo/Redo, crash-recovery
+  snapshots and a restartable worker. Sources remain separate from the project document.
+- **Use lens profiles:** Lensfun discovery and optional app-private database updates,
+  without replacing the system or user database.
 
-Lensfun discovery reads installed XML profiles and a supplemental built-in profile. **Update DB** downloads an immutable upstream commit, checks Git blob identities and validates all XML before activating an app-private snapshot. Existing user/system Lensfun directories are never overwritten. Existing project geometry stays fixed until **Reapply profiles** is chosen; rerun Auto Align afterwards. Downloading can be stopped.
+<details>
+<summary>More screenshots: projections and export</summary>
 
-## Build and verify
+![Projection menu with thirteen panorama choices](docs/images/projections.png)
 
-Requires Node.js 22+, npm, Rust/Cargo and a supported native OS toolchain. Linux **release** builds require `cargo-zigbuild` and Zig; they target GLIBC 2.28 and check the resulting ELF version requirements. A debug build is available for local development without Zig.
+![Export controls with Adobe RGB, bit depth, crop and stitch settings](docs/images/export.png)
+
+</details>
+
+## Download and run
+
+Download matching files from [Releases](https://github.com/slashmad/SlashStitch/releases).
+The desktop interface and Rust worker are included; Node.js and Rust are only needed to build
+from source.
+
+| Platform | Packages |
+|---|---|
+| Linux x64 | AppImage, Debian/Ubuntu `.deb`, Fedora/RPM `.rpm` |
+| Windows x64 | Setup installer, portable `.exe`, `.zip` |
+| macOS Apple Silicon | arm64 `.dmg`, `.zip` |
+| macOS Intel | x64 `.dmg`, `.zip` |
+
+Check the architecture in the filename. SHA-256 checksums accompany the release assets.
+Unsigned packages may require approval from Windows SmartScreen or macOS Gatekeeper.
+
+For the Linux AppImage:
+
+```sh
+chmod +x SlashStitch-0.1.0-linux-x64.AppImage
+./SlashStitch-0.1.0-linux-x64.AppImage
+```
+
+If FUSE mounting is unavailable, use `--appimage-extract-and-run`. Display libraries and GPU
+drivers still come from the host. The Linux Rust worker targets GLIBC 2.28; this is an ABI
+baseline for that binary, not a guarantee for every Linux desktop.
+
+## First panorama
+
+1. Add overlapping JPEG, PNG, TIFF or WebP images, or drop a folder onto the window.
+2. Choose **Auto Align** and inspect the result. Moving skies, water and nearby foreground
+   can need different compromises; a low control-point error does not make moving content identical.
+3. Pick a projection, adjust the view and crop. Toggle **Seams** to inspect the contributing frames.
+4. Choose a stitch preset, colour profile and bit depth in **Export**, then save the panorama.
+5. Save an `.ssp` project to return to the alignment and settings later. Keep its source images.
+
+The [user guide](docs/USER_GUIDE.md) covers shortcuts, lens models, colour management,
+resource limits, recovery and advanced stitching.
+
+## Formats and current limits
+
+Sources retain up to 16 bits per channel. **10-bit output uses 1024 levels stored in RGB16.**
+JPEG supports 8 bits per channel. Higher-bit-depth export cannot recover detail absent from
+8-bit originals. RGB ICC profiles are supported; LUT-only output profiles without RGB tone
+curves are rejected. Transparent and non-RGB sources must be flattened or converted first.
+RAW/DNG decoding, HDR merging and Lightroom/XMP edits are not supported. Development sample
+photographs and camera originals are not distributed.
+
+Large sources use a disk cache and memory reservations. Limits adapt to memory and disk space;
+maximum source counts and dimensions are safeguards, not promises that every maximum-size
+project fits. Initial cache creation can take time and substantial disk space. Full-resolution
+control-point refinement remains future work.
+
+## Build from source
+
+Use Node.js 22+, npm, Rust/Cargo and the native build tools for your OS. Linux release builds
+also need Zig, cargo-zigbuild and objdump:
 
 ```sh
 npm ci
-npm run typecheck
-npm test
+cargo install cargo-zigbuild --version 0.24.1 --locked --root "$PWD/.build-tools"
+python3 -m venv .build-tools/python
+.build-tools/python/bin/pip install ziglang==0.17.1
 npm run build
 npm start
 ```
 
-One way to prepare isolated Linux build tools in the checkout:
+On Windows use the MSVC Rust toolchain and Visual Studio C++ build tools. On macOS use the
+native Rust toolchain and Xcode command-line tools. Omit the Linux-only tool setup there.
 
 ```sh
-cargo install cargo-zigbuild --version 0.24.1 --locked --root "$PWD/.build-tools"
-python3 -m venv .build-tools/python
-.build-tools/python/bin/pip install ziglang==0.17.1
+npm run typecheck
+npm test
+npm run pack          # unpacked native application
+npm run dist:linux    # Linux host: AppImage, deb, rpm
+npm run dist:win      # Windows host: setup, portable, zip
+npm run dist:mac      # macOS host: dmg, zip
+npm run release:checksums
 ```
 
-The build script discovers these local tools automatically; alternatively put `cargo-zigbuild` and `zig` on PATH. `objdump` is required for the Linux ABI check. On Linux with Weston installed, run `npm run smoke` and `npm run smoke:regressions` for isolated headless UI tests. They use a private display/profile and disable Chromium's sandbox only for the throwaway test process. The normal app keeps renderer sandboxing enabled.
+Installer builds reuse the Electron distribution installed by `npm ci` and a release worker
+verified for the same OS and architecture. Cross-packaging another OS's worker is rejected.
+GitHub Actions builds the four platform/architecture combinations separately. On Linux,
+`npm run smoke` and `npm run smoke:regressions` use a private headless Weston session.
 
-```sh
-npm run build:engine:debug
-SLASHSTITCH_DEBUG_WORKER=1 npm start
-```
+## License and credits
 
-`npm test` includes Rust geometry/GPU tests, the worker bridge, real worker integration, project persistence/recovery and atomic file/database-update tests. GPU parity covers all panorama projections, source lens types and portrait/landscape aspects when an adapter is available. GPU tests serialize device initialization for driver stability. A GPU-less runner cannot qualify GPU execution. `npm run verify:images` optionally validates the local sample-image folders; those images are not distributed.
+SlashStitch is [MIT licensed](LICENSE). Electron/Chromium and Rust dependency notices are
+included in the packages. Lensfun and other third-party components retain their own licenses.
+The native engine uses wgpu, Rayon, image, moxcms and nalgebra alongside the desktop interface.
 
-## Package
+## Support
 
-```sh
-npm run pack
-npm run dist:linux
-npm run dist:win
-npm run dist:mac
-```
+If SlashStitch is useful to you, you can support its development:
 
-Build each installer on its corresponding OS; the scripts reject cross-packaging a worker for the wrong OS. Only verified release workers can be staged. Packaging includes the application license, Rust dependency license texts, and Electron/Chromium notices. Linux workbench execution and an unpacked Linux package have been exercised locally. Windows/macOS CI is prepared and the engine passes strict clippy for the Windows (x86_64-pc-windows-gnu) and macOS (aarch64-apple-darwin) targets, with native memory and disk-space queries on both; native runtime verification, installers and signing still require those platforms. A GLIBC ABI check alone does not qualify every Linux distribution or GPU driver.
-
-Source entry points are `src/main/`, `src/preload/`, `src/renderer/` and the three crates under `engine/` (`slashstitch-core/src/render.rs` is the shared preview/export renderer, `photometric.rs` the exposure/vignetting model). The worker uses JSON-lines requests and events over stdio. Project mutations run behind one worker job gate; cancellation is cooperative and finalization completes before synchronous replies. Control timeouts do not cancel backend jobs, and every completed commit publishes the full project state so the editor stays in sync even after a timeout. Exact previews run in a separate lane where a newer request cancels an older one. Preview images are served to the renderer through a private `slashstitch-preview:` protocol restricted to the session directory.
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slashmad)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20beer-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/slashmad)
+[![Liberapay](https://img.shields.io/badge/Liberapay-donate-F6C915?logo=liberapay&logoColor=black)](https://liberapay.com/slashmad/)

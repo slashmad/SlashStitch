@@ -17,13 +17,14 @@
     "start": "node scripts/start.mjs",
     "dev": "npm run build && node scripts/start.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dist:linux": "node scripts/check-package-platform.mjs linux && npm run build:engine:release && npm run stage:engine && npm run build:notices && npm run build:main && npm run build:renderer && electron-builder --linux AppImage deb rpm --publish never",
-    "dist:win": "node scripts/check-package-platform.mjs win32 && npm run build:engine:release && npm run stage:engine && npm run build:notices && npm run build:main && npm run build:renderer && electron-builder --win nsis portable zip --publish never",
-    "dist:mac": "node scripts/check-package-platform.mjs darwin && npm run build:engine:release && npm run stage:engine && npm run build:notices && npm run build:main && npm run build:renderer && electron-builder --mac dmg zip --publish never",
+    "dist:linux": "node scripts/package.mjs linux",
+    "dist:win": "node scripts/package.mjs win32",
+    "dist:mac": "node scripts/package.mjs darwin",
     "test:engine": "cargo test --manifest-path engine/Cargo.toml && cargo build --manifest-path engine/Cargo.toml --bin slashstitch-worker",
     "test": "npm run test:engine && node --test tests/*.test.mjs",
     "smoke": "npm run build && node scripts/smoke.mjs",
-    "pack": "npm run build:engine:release && npm run stage:engine && npm run build:notices && npm run build:main && npm run build:renderer && electron-builder --dir --publish never",
+    "pack": "node scripts/package.mjs --dir",
+    "release:checksums": "node scripts/release-checksums.mjs",
     "icon": "node scripts/sync-icons.mjs",
     "build:notices": "node scripts/build-notices.mjs",
     "build:engine:debug": "cargo build --manifest-path engine/Cargo.toml --bin slashstitch-worker",
@@ -46,7 +47,8 @@
     "vite": "8.3.5"
   },
   "desktopName": "slashstitch.desktop",
-  "homepage": "https://github.com/slashmad",
+  "homepage": "https://github.com/slashmad/SlashStitch",
+  "repository": { "type": "git", "url": "https://github.com/slashmad/SlashStitch.git" },
   "overrides": {
     "minimatch@>=7.0.0 <11.0.1": "11.0.1"
   }

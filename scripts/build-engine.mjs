@@ -4,6 +4,11 @@ import {delimiter,join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 const local=resolve('.build-tools');
+const hostInfo=spawnSync('rustc',['-vV'],{encoding:'utf8'});
+const rustTarget=hostInfo.stdout?.match(/^host: (.+)$/m)?.[1];
+if(!rustTarget)throw new Error('Cannot identify the native Rust toolchain');
+const rustArch=rustTarget.startsWith('aarch64-')?'arm64':rustTarget.startsWith('x86_64-')?'x64':null;
+if(rustArch!==process.arch)throw new Error(`Rust toolchain ${rustTarget} does not match Node ${process.arch}; use native tools for packaging`);
 const target=process.platform==='linux'?`${process.arch==='arm64'?'aarch64':'x86_64'}-unknown-linux-gnu`:null;
 const args=['build','--manifest-path','engine/Cargo.toml','--release','--locked','--bin','slashstitch-worker'];
 const env={...process.env};
@@ -25,7 +30,7 @@ const exe=process.platform==='win32'?'slashstitch-worker.exe':'slashstitch-worke
 const source=join('engine','target',...(target?[target]:[]),'release',exe);
 const out=join('engine','target','release');mkdirSync(out,{recursive:true});
 if(target)copyFileSync(source,join(out,exe));
-writeFileSync(join(out,'engine-build.json'),JSON.stringify({target:target??process.platform,glibc_max:target?'2.28':null,sha256:createHash('sha256').update(readFileSync(source)).digest('hex')},null,2)+'\n');
+writeFileSync(join(out,'engine-build.json'),JSON.stringify({target:target??rustTarget,platform:process.platform,arch:process.arch,glibc_max:target?'2.28':null,sha256:createHash('sha256').update(readFileSync(source)).digest('hex')},null,2)+'\n');
 if(target){
  const info=spawnSync('objdump',['-T',source],{encoding:'utf8'});
  if(info.status!==0)throw new Error('objdump is required to verify the Linux worker ABI');

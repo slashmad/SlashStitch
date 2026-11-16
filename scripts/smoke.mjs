@@ -18,7 +18,7 @@ let display,application,socket;
 try {
  const env={...process.env,XDG_RUNTIME_DIR:temporary,WAYLAND_DISPLAY:'slashapp-test',SLASHSTITCH_DISPLAY:'wayland'};
  delete env.ELECTRON_RUN_AS_NODE;
- display=spawn('weston',['--backend=headless','--socket=slashapp-test','--idle-time=0','--width=1440','--height=900'],{env,stdio:['ignore',log,log]});
+ display=spawn('weston',['--backend=headless-backend.so','--socket=slashapp-test','--idle-time=0','--width=1440','--height=900'],{env,stdio:['ignore',log,log]});
  display.on('error',error=>console.error(error.message));
  await until(()=>existsSync(join(temporary,'slashapp-test')),'headless Wayland socket');
  const userData=join(temporary,'profile');

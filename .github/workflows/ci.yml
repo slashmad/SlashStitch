@@ -1,16 +1,27 @@
-name: Verify
+name: Verify and package
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   check:
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2025, macos-15]
+        include:
+          - {os: ubuntu-22.04, name: Linux x64, package: linux}
+          - {os: windows-2025, name: Windows x64, package: win}
+          - {os: macos-15, name: macOS arm64, package: mac}
+          - {os: macos-15-intel, name: macOS x64, package: mac}
     runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      CARGO_BUILD_JOBS: '3'
+      RAYON_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +31,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
       - run: npm ci
       - run: npm run typecheck
       - run: cargo fmt --manifest-path engine/Cargo.toml --all --check
@@ -30,13 +44,25 @@ jobs:
           cargo install cargo-zigbuild --version 0.24.1 --locked
           python3 -m pip install ziglang==0.17.1
           python3 -c 'import pathlib,ziglang;print(pathlib.Path(ziglang.__file__).parent)' >> "$GITHUB_PATH"
-      - run: npm run build
-      - run: npm run stage:engine
-      - run: npm run build:notices
+      - run: npm run dist:${{ matrix.package }}
+      - run: npm run release:checksums
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y weston
           node scripts/smoke.mjs
           node scripts/regression-smoke.mjs
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --include=dev --include=optional --audit-level=moderate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SlashStitch-${{ runner.os }}-${{ runner.arch }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/SlashStitch-*.AppImage
+            release/SlashStitch-*.deb
+            release/SlashStitch-*.rpm
+            release/SlashStitch-*.exe
+            release/SlashStitch-*.zip
+            release/SlashStitch-*.dmg
+            release/SlashStitch-*-SHA256SUMS.txt
