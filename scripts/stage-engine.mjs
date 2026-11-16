@@ -1,6 +1,7 @@
 import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import {createHash} from "node:crypto";
 import { join } from "node:path";
+import {verifyWindowsRuntime} from './windows-imports.mjs';
 
 const exe = process.platform === "win32" ? "slashstitch-worker.exe" : "slashstitch-worker";
 const candidates = [join("engine", "target", "release", exe)];
@@ -21,6 +22,8 @@ if(process.platform==='win32'){
  const pe=bytes.readUInt32LE(0x3c);
  const expected=process.arch==='arm64'?0xaa64:0x8664;
  if(bytes.toString('ascii',pe,pe+4)!=='PE\0\0'||bytes.readUInt16LE(pe+4)!==expected)throw new Error('Windows worker machine type mismatch');
+ if(metadata.crt_static!==true)throw new Error('Windows release worker must use a static C runtime');
+ verifyWindowsRuntime(bytes);
 }
 if(process.platform==='darwin'){
  const expected=process.arch==='arm64'?0x0100000c:0x01000007;

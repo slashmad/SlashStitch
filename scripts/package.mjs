@@ -7,6 +7,9 @@ const directoryOnly=process.argv.includes('--dir');
 if(!['linux','win32','darwin'].includes(platform)||platform!==process.platform)throw new Error(`Build ${platform} packages on ${platform}; cross-packaging a host worker is refused.`);
 function run(command,args,env=process.env){const r=spawnSync(command,args,{stdio:'inherit',env});if(r.error)throw r.error;if(r.status!==0)process.exit(r.status??1);}
 for(const script of ['build-engine.mjs','stage-engine.mjs','build-notices.mjs','build-main.mjs','build-renderer.mjs'])run(process.execPath,[join('scripts',script)]);
+// Exercise the actual optimized/staged binary, not only Cargo's debug test worker.
+const worker=resolve('build','bin',platform==='win32'?'slashstitch-worker.exe':'slashstitch-worker');
+run(process.execPath,['--test','tests/worker.test.mjs'],{...process.env,SLASHSTITCH_TEST_WORKER:worker});
 // Reuse npm ci's already downloaded, version-checked native Electron distribution.
 // This avoids a second download and makes offline packaging possible after setup.
 const electronDist=resolve('node_modules/electron/dist');

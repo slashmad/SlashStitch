@@ -1,3 +1,5 @@
-# Supplemental upstream notices are verified byte-for-byte by SOURCE.json hashes.
-# Windows checkouts must not turn their LF bytes into CRLF.
+# Keep source/build outputs reproducible across native Windows and Unix checkouts.
+* text=auto eol=lf
+
+# Supplemental notices are verified byte-for-byte by SOURCE.json hashes.
 licenses/third-party/** text eol=lf
