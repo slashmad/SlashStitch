@@ -227,7 +227,14 @@ fn region_of(view: &BandViewParams) -> [f64; 4] {
 }
 
 fn init_wgpu() -> Result<GpuContext, String> {
-    let instance = wgpu::Instance::default();
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    // Enumerating Vulkan can crash older Intel Windows drivers in native code,
+    // before Rust can return an error or unwind. Prefer the Windows-native API.
+    if cfg!(target_os = "windows") {
+        descriptor.backends = wgpu::Backends::DX12;
+    }
+    // An explicit WGPU_BACKEND remains available for driver diagnostics.
+    let instance = wgpu::Instance::new(descriptor.with_env());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,

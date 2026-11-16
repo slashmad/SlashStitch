@@ -50,6 +50,12 @@ test('real host: validates sender, failed starts, saved projects, recovery and w
  await parsed('save-project',{ui});assert.equal(JSON.parse(readFileSync(savePath)).images.length,1);
  const recovered=await parsed('restart-engine');assert.equal(recovered.images.length,1);assert.equal(recovered.images[0].yaw_deg,25);
  await until(async()=>(await parsed('shell-info')).jobState==='idle');assert.equal((await parsed('shell-info')).engineAvailable,true);
+ // Explicit recovery must select CPU even when no ambient CPU flag is present.
+ delete process.env.SLASHSTITCH_FORCE_CPU;
+ globalThis.__testWorkerBridge.child.kill('SIGKILL');await until(async()=>!(await parsed('shell-info')).engineAvailable);
+ const cpuRecovered=await parsed('restart-engine-cpu');assert.equal(cpuRecovered.images[0].yaw_deg,25);
+ assert.match((await parsed('engine-info')).gpu_backend,/CPU/);
+ await until(async()=>(await parsed('shell-info')).jobState==='idle');process.env.SLASHSTITCH_FORCE_CPU='1';
  await parsed('update-image-pose',{id:0,yaw_deg:30});await until(async()=>(await parsed('shell-info')).jobState==='idle');
  closingUi={crop:{left:.25,top:.1,right:.8,bottom:.9},exportWidth:1234};messageResponse=0;
  window.close();

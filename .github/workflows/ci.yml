@@ -47,6 +47,13 @@ jobs:
           python3 -c 'import pathlib,ziglang;print(pathlib.Path(ziglang.__file__).parent)' >> "$GITHUB_PATH"
       - run: npm run dist:${{ matrix.package }}
       - run: npm run release:checksums
+      - name: Verify packaged Windows startup and UI
+        if: runner.os == 'Windows'
+        env:
+          SLASHSTITCH_TEST_EXECUTABLE: ${{ github.workspace }}/release/win-unpacked/slashstitch.exe
+        run: |
+          node scripts/smoke.mjs
+          node scripts/regression-smoke.mjs
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update

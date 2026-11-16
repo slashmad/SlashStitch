@@ -1,4 +1,4 @@
-// Isolated Linux UI smoke: requires weston, never uses the desktop display or capture hardware.
+// Isolated Linux/Windows UI smoke; Linux uses a private headless Weston display.
 import {spawn} from 'node:child_process';
 import {mkdtempSync, openSync, existsSync, readFileSync, rmSync, closeSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -16,17 +16,20 @@ async function until(check,label,timeout=20000) {
 const log=openSync(join(temporary,'process.log'),'w');
 let display,application,socket;
 try {
- const env={...process.env,XDG_RUNTIME_DIR:temporary,WAYLAND_DISPLAY:'slashapp-test',SLASHSTITCH_DISPLAY:'wayland'};
+ const env={...process.env};
  delete env.ELECTRON_RUN_AS_NODE;
- delete env.DISPLAY;
- display=spawn('weston',['--backend=headless-backend.so','--socket=slashapp-test','--idle-time=0','--width=1440','--height=900'],{env,stdio:['ignore',log,log]});
- display.on('error',error=>console.error(error.message));
- await until(()=>existsSync(join(temporary,'slashapp-test')),'headless Wayland socket');
+ if(process.platform==='linux'){
+  Object.assign(env,{XDG_RUNTIME_DIR:temporary,WAYLAND_DISPLAY:'slashapp-test',SLASHSTITCH_DISPLAY:'wayland'});delete env.DISPLAY;
+  display=spawn('weston',['--backend=headless-backend.so','--socket=slashapp-test','--idle-time=0','--width=1440','--height=900'],{env,stdio:['ignore',log,log]});
+  display.on('error',error=>console.error(error.message));
+  await until(()=>existsSync(join(temporary,'slashapp-test')),'headless Wayland socket');
+ }else if(process.platform==='win32')delete env.SLASHSTITCH_FORCE_CPU;
+ else throw Error('This UI smoke supports Linux and Windows.');
  const userData=join(temporary,'profile');
  // --no-sandbox is restricted to this throwaway integration test, never start.mjs or packaged config.
  application=spawn(process.env.SLASHSTITCH_TEST_EXECUTABLE || require('electron'),[
    ...(process.env.SLASHSTITCH_TEST_EXECUTABLE?[]:[resolve('.')]),
-   '--ozone-platform=wayland','--no-sandbox','--disable-gpu','--remote-debugging-port=0',`--user-data-dir=${userData}`
+   ...(process.platform==='linux'?['--ozone-platform=wayland']:[]),'--no-sandbox','--disable-gpu','--remote-debugging-port=0',`--user-data-dir=${userData}`
  ],{env,stdio:['ignore',log,log]});
  application.on('error',error=>console.error(error.message));
  const portFile=join(userData,'DevToolsActivePort');

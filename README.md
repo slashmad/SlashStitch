@@ -23,7 +23,7 @@ and React interface provides a live workbench with GPU preview and full-resoluti
 
 ![SlashStitch aligning ten aurora photographs, with source frames, blend seams and optimizer results](docs/images/optimizer.png)
 
-> **Status: early development, 0.1.0.** Linux has been exercised with real image sets and
+> **Status: early development, 0.1.1.** Linux has been exercised with real image sets and
 > local desktop tests. The build workflow also runs native worker tests and produces Windows
 > and macOS packages. Building and automated tests do not qualify every GPU, driver or desktop
 > environment. Windows and macOS installers are unsigned; macOS builds are not notarized.
@@ -76,8 +76,8 @@ Unsigned packages may require approval from Windows SmartScreen or macOS Gatekee
 For the Linux AppImage:
 
 ```sh
-chmod +x SlashStitch-0.1.0-linux-x64.AppImage
-./SlashStitch-0.1.0-linux-x64.AppImage
+chmod +x SlashStitch-0.1.1-linux-x64.AppImage
+./SlashStitch-0.1.1-linux-x64.AppImage
 ```
 
 If FUSE mounting is unavailable, use `--appimage-extract-and-run`. Display libraries and GPU
@@ -95,6 +95,11 @@ baseline for that binary, not a guarantee for every Linux desktop.
 
 The [user guide](docs/USER_GUIDE.md) covers shortcuts, lens models, colour management,
 resource limits, recovery and advanced stitching.
+
+On Windows, DirectX 12 is the default preview backend. If graphics initialization crashes or
+stalls before the engine is ready, SlashStitch retries once with CPU rendering. **Restart with
+CPU** is also available after an engine disconnection. `SLASHSTITCH_FORCE_CPU=1` starts directly
+without GPU initialization; `WGPU_BACKEND` can override the backend for driver diagnostics.
 
 ## Formats and current limits
 

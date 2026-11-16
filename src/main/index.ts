@@ -74,7 +74,12 @@ function resolveWorker() {
   return { command: join(base, exe), args: [], env: workerEnv };
 }
 const spec = resolveWorker();
-const worker = new WorkerBridge(spec.command, spec.args, spec.env);
+const worker = new WorkerBridge(spec.command, spec.args, spec.env,
+  process.platform === "win32" && process.env.SLASHSTITCH_USE_DEMO_WORKER !== "1" ? {
+    probeAction: "engine-info", timeoutMs: 15_000,
+    fallbackEnv: process.env.SLASHSTITCH_FORCE_CPU === undefined ? {SLASHSTITCH_FORCE_CPU:"1"} : undefined,
+    retryExitCodes: [0xc0000005,0xc000001d,0xc0000409],
+  } : undefined);
 let win: BrowserWindow | null = null;
 let jobState = "idle";
 let pendingMutation = false;
@@ -296,9 +301,9 @@ app.whenReady().then(() => {
           if (result.ok) { savedRecovery = null; projectFile = null; notifyProject(); }
           return result;
         }
-        case "restart-engine": {
+        case "restart-engine": case "restart-engine-cpu": {
           if (engineAvailable) return fail("The engine is already connected.");
-          worker.restart(); engineAvailable = true; jobState = "idle";
+          worker.restart(action === "restart-engine-cpu" ? {SLASHSTITCH_FORCE_CPU:"1"} : {}); engineAvailable = true; jobState = "idle";
           const result = recovery ? await mutate("restore-project", recovery) : await worker.request("engine-info");
           if (!result.ok) { send("worker-error", { text: result.text }); }
           notifyProject(); return result;

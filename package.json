@@ -1,7 +1,7 @@
 {
   "name": "slashstitch",
   "productName": "SlashStitch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cross-platform open-source panorama stitcher built on SlashAPP + Rust.",
   "author": "slashmad",
   "license": "MIT",
@@ -50,7 +50,10 @@
   },
   "desktopName": "slashstitch.desktop",
   "homepage": "https://github.com/slashmad/SlashStitch",
-  "repository": { "type": "git", "url": "https://github.com/slashmad/SlashStitch.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/slashmad/SlashStitch.git"
+  },
   "overrides": {
     "minimatch@>=7.0.0 <11.0.1": "11.0.1"
   }

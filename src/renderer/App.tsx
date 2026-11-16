@@ -439,6 +439,8 @@ export function App() {
       if (name === "engine-disconnected") {
         setState("disconnected");setEngineAvailable(false);setError((data as {text:string}).text);setBusyText("");setProgress(null);
       }
+      if (name === "worker-recovering") setBusyText((data as {text:string}).text);
+      if (name === "worker-ready") {setEngine(data as EngineInfo);setEngineAvailable(true);setBusyText("");}
       if (name === "job-progress") {
         setProgress(data as { percent: number; stage: string });
       }
@@ -717,7 +719,7 @@ export function App() {
     if(resized.ok)setPreviewInfo(JSON.parse(resized.text));
     await refreshPreviewImage();
   },[computeRenderSize,run,refreshPreviewImage,syncProjectColor]);
-  const openProject=useCallback(async(action="open-project")=>{if(stateRef.current!=="idle" && action!=="restart-engine")return;const result=await run(action);if(result.ok) {await acceptProject(JSON.parse(result.text));if(action==="restart-engine"){setEngineAvailable(true);setState("idle");}}},[acceptProject,run]);
+  const openProject=useCallback(async(action="open-project")=>{const restarting=action==="restart-engine"||action==="restart-engine-cpu";if(stateRef.current!=="idle" && !restarting)return;const result=await run(action);if(result.ok) {await acceptProject(JSON.parse(result.text));if(restarting){setEngineAvailable(true);setState("idle");}}},[acceptProject,run]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1245,6 +1247,7 @@ export function App() {
         <button disabled={state!=="idle" && engineAvailable} onClick={()=>void saveProject()} title="Save Project (Ctrl+S; Shift for Save As)">Save</button>
         {recoveryAvailable&&<button disabled={state!=="idle"} onClick={()=>void openProject("recover-project")}>Recover</button>}
         {!engineAvailable&&<button onClick={()=>void openProject("restart-engine")}>Restart Engine</button>}
+        {!engineAvailable&&<button onClick={()=>void openProject("restart-engine-cpu")}>Restart with CPU</button>}
         <button title="Add Images (Ctrl+O)" disabled={state !== "idle" || Boolean(busyText)} onClick={() => void addImages()}>+ Add Images</button>
         <button id="start-job" title="Detect control points, optimize & level horizon (Ctrl+Shift+A)" disabled={state !== "idle" || Boolean(busyText)} onClick={() => void runAutoAlign()}>
           {poses.length >= 2 ? "Auto Align" : "Align & Preview"}
