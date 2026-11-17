@@ -130,6 +130,81 @@ impl CanvasMap {
     }
 }
 
+/// Output pixels per degree near the centre of a render (largest angular step of the two
+/// axes), searching outward when the centre maps to no ray.
+fn canvas_px_per_deg(canvas: &CanvasMap) -> f64 {
+    for gy in [0.5, 0.35, 0.65, 0.2, 0.8] {
+        for gx in [0.5, 0.35, 0.65, 0.2, 0.8, 0.05, 0.95] {
+            let x = gx * canvas.out_w;
+            let y = gy * canvas.out_h;
+            if let (Some(a), Some(b), Some(c)) = (
+                canvas.ray(x, y),
+                canvas.ray(x + 1.0, y),
+                canvas.ray(x, y + 1.0),
+            ) {
+                let step = angle_between(a, b).max(angle_between(a, c));
+                if step > 0.0 && step.is_finite() {
+                    return 1.0 / step.to_degrees();
+                }
+            }
+        }
+    }
+    canvas.out_w / 360.0
+}
+
+/// Highest source resolution in pixels per degree at the centre of any image (where lenses
+/// resolve most finely).
+pub fn source_center_px_per_deg(images: &[SourceImage]) -> Option<f64> {
+    images
+        .iter()
+        .filter_map(|im| {
+            let (cx, cy) = (f64::from(im.width) * 0.5, f64::from(im.height) * 0.5);
+            let a = image_px_to_world_ray(cx, cy, im)?;
+            let b = image_px_to_world_ray(cx + 1.0, cy, im)?;
+            let step = angle_between(a, b);
+            (step > 0.0 && step.is_finite()).then(|| 1.0 / step.to_degrees())
+        })
+        .reduce(f64::max)
+}
+
+/// Cropped output size that keeps the source resolution at the image centres ("full
+/// resolution", PTGui's optimum size): the output's pixels per degree near the crop centre
+/// equal [`source_center_px_per_deg`]. Uses the same canvas mapping as exports
+/// (`view.canvas_aspect` must be the project's canvas aspect).
+pub fn native_output_size(
+    projection: PanoramaProjection,
+    pano_hfov_deg: f64,
+    view: &BandViewParams,
+    images: &[SourceImage],
+) -> Option<(u32, u32)> {
+    let aspect = view.canvas_aspect.filter(|a| a.is_finite() && *a > 0.0)?;
+    let source = source_center_px_per_deg(images)?;
+    let (cl, ct, cr, cb) = sanitized_crop(view.crop);
+    let (cw, ch) = (cr - cl, cb - ct);
+    // Reference render: a 4096 px wide full canvas, cropped like the export.
+    let (out_w, out_h) = (4096.0 * cw, 4096.0 / aspect * ch);
+    let canvas = CanvasMap {
+        projection,
+        hfov: pano_hfov_deg,
+        v_shift: view.view_v_shift,
+        cl,
+        ct,
+        cw,
+        ch,
+        aspect,
+        out_w,
+        out_h,
+        full_w: out_w,
+        full_h: out_h,
+        grid_scale: 1.0,
+        grid_offset: 0.0,
+        rot: rotation_matrix(view.view_yaw_deg, view.view_pitch_deg, 0.0),
+    };
+    let scale = source / canvas_px_per_deg(&canvas);
+    let clamp = |v: f64| (v * scale).round().clamp(1.0, 200_000.0) as u32;
+    Some((clamp(out_w), clamp(out_h)))
+}
+
 /// Per-render precomputation shared by all bands.
 pub struct RenderPlan {
     canvas: CanvasMap,
@@ -255,27 +330,8 @@ impl RenderPlan {
         let projectors: Vec<ImageProjector> =
             input.images[..n].iter().map(ImageProjector::new).collect();
 
-        // Output angular step near the canvas centre (largest of the two axes).
-        let mut rad_per_px = None;
-        'search: for gy in [0.5, 0.35, 0.65, 0.2, 0.8] {
-            for gx in [0.5, 0.35, 0.65, 0.2, 0.8, 0.05, 0.95] {
-                let x = gx * canvas.out_w;
-                let y = gy * canvas.out_h;
-                if let (Some(a), Some(b), Some(c)) = (
-                    canvas.ray(x, y),
-                    canvas.ray(x + 1.0, y),
-                    canvas.ray(x, y + 1.0),
-                ) {
-                    let step = angle_between(a, b).max(angle_between(a, c));
-                    if step > 0.0 && step.is_finite() {
-                        rad_per_px = Some(step);
-                        break 'search;
-                    }
-                }
-            }
-        }
-        let rad_per_px = rad_per_px.unwrap_or(std::f64::consts::TAU / canvas.out_w);
-        let out_px_per_deg = 1.0 / rad_per_px.to_degrees();
+        let out_px_per_deg = canvas_px_per_deg(&canvas);
+        let rad_per_px = out_px_per_deg.recip().to_radians();
 
         let mut resolution_deficit = 0.0f64;
         let mut levels_of = Vec::with_capacity(n);
@@ -2075,6 +2131,61 @@ mod tests {
                 assert!((p[0] - 0.25).abs() < 2e-3, "value {p:?}");
             }
         }
+    }
+
+    #[test]
+    fn native_size_matches_source_centre_resolution() {
+        // Rectilinear 400 px over 70°: focal = 200 / tan(35°) px per radian at the centre.
+        let images = [src(0, 0.0), src(1, 40.0)];
+        let ppd = source_center_px_per_deg(&images).unwrap();
+        let expected = (200.0 / 35f64.to_radians().tan()).to_radians();
+        assert!(
+            (ppd - expected).abs() < 1e-3 * expected,
+            "{ppd} vs {expected}"
+        );
+        // Equirectangular: a full canvas has width / 360 pixels per degree everywhere.
+        let full = BandViewParams {
+            canvas_aspect: Some(2.0),
+            ..Default::default()
+        };
+        let (w, h) =
+            native_output_size(PanoramaProjection::Equirectangular, 360.0, &full, &images).unwrap();
+        assert!(
+            (f64::from(w) - 360.0 * ppd).abs() <= 2.0,
+            "{w} vs {}",
+            360.0 * ppd
+        );
+        assert!(w.abs_diff(2 * h) <= 1, "{w} x {h}");
+        // A crop keeps the same density: the size scales with the crop.
+        let cropped = BandViewParams {
+            crop: [0.25, 0.3, 0.75, 0.7],
+            ..full
+        };
+        let (cw, ch) = native_output_size(
+            PanoramaProjection::Equirectangular,
+            360.0,
+            &cropped,
+            &images,
+        )
+        .unwrap();
+        assert!(
+            (f64::from(cw) - 0.5 * f64::from(w)).abs() <= 2.0
+                && (f64::from(ch) - 0.4 * f64::from(h)).abs() <= 2.0
+        );
+        // A wider lens (lower density) gives a smaller full-resolution output.
+        let wide: Vec<_> = images
+            .iter()
+            .map(|i| SourceImage {
+                hfov_deg: 100.0,
+                ..i.clone()
+            })
+            .collect();
+        assert!(
+            native_output_size(PanoramaProjection::Equirectangular, 360.0, &full, &wide)
+                .unwrap()
+                .0
+                < w
+        );
     }
 
     #[test]

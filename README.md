@@ -23,7 +23,7 @@ and React interface provides a live workbench with GPU preview and full-resoluti
 
 ![SlashStitch aligning ten aurora photographs, with source frames, blend seams and optimizer results](docs/images/optimizer.png)
 
-> **Status: early development, 0.2.0.** Linux has been exercised with real image sets and
+> **Status: early development, 0.2.1.** Linux has been exercised with real image sets and
 > local desktop tests. The build workflow also runs native worker tests and produces Windows
 > and macOS packages. Building and automated tests do not qualify every GPU, driver or desktop
 > environment. Windows and macOS installers are unsigned; macOS builds are not notarized.
@@ -45,8 +45,10 @@ and React interface provides a live workbench with GPU preview and full-resoluti
   are developed in floating point to a wide-gamut 16-bit source. Lightroom/ACR white balance,
   exposure and orientation from XMP sidecars (or a DNG's embedded XMP) are applied; other
   Lightroom adjustments are listed per image instead of being guessed.
-- **Export panoramas:** TIFF/BigTIFF, PNG and JPEG, with cancellation, atomic output and
-  protection against overwriting source photographs. Large TIFFs render in strips.
+- **Export panoramas:** at full resolution by default (the source images' pixel density at
+  their centres, so no detail is lost) or a chosen fraction, as TIFF/BigTIFF, PNG and JPEG,
+  with cancellation, atomic output and protection against overwriting source photographs.
+  Large TIFFs render in strips.
 - **Save the work:** `.ssp` projects, relative source paths, Undo/Redo, crash-recovery
   snapshots and a restartable worker. Sources remain separate from the project document.
 - **Use lens profiles:** Lensfun discovery and optional app-private database updates,
@@ -80,8 +82,8 @@ Unsigned packages may require approval from Windows SmartScreen or macOS Gatekee
 For the Linux AppImage:
 
 ```sh
-chmod +x SlashStitch-0.2.0-linux-x64.AppImage
-./SlashStitch-0.2.0-linux-x64.AppImage
+chmod +x SlashStitch-0.2.1-linux-x64.AppImage
+./SlashStitch-0.2.1-linux-x64.AppImage
 ```
 
 If FUSE mounting is unavailable, use `--appimage-extract-and-run`. Display libraries and GPU

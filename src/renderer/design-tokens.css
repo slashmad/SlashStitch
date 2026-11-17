@@ -28,6 +28,13 @@
   --code: #14161b;
   --shadow: 0 10px 34px #0007;
 
+  /* Title bar ("chrome"): darker than the panels; native window controls use the same colour. */
+  --chrome: #111318;
+  --chrome-text: #c4cad4;
+  --chrome-hover: #1f232b;
+  --titlebar-h: 36px;
+  --sponsor: #e0569a;
+
   color-scheme: dark;
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif;
 }
@@ -37,6 +44,9 @@
   --panel: #ffffff;
   --panel-2: #f1f3f6;
   --panel-3: #e6e9ee;
+  --chrome: #e4e7ec;
+  --chrome-text: #2b3038;
+  --chrome-hover: #d6dae1;
   --line: #d9dde4;
   --line-2: #c3c9d3;
   --text: #1c2129;

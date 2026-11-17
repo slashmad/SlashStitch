@@ -2375,6 +2375,7 @@ fn main() {
         match req.action.as_str() {
             "ping" | "echo" => reply(&out, &req.id, Ok(req.payload)),
             "engine-info" => reply(&out, &req.id, Ok(engine_info(&shared))),
+            "native-export-size" => reply(&out, &req.id, native_export_size(&shared, &req.payload)),
             "job-status" => reply(
                 &out,
                 &req.id,
@@ -2437,6 +2438,45 @@ fn main() {
     if let Some(h) = shared.worker_thread.lock().unwrap().take() {
         let _ = h.join();
     };
+}
+/// Full-resolution export size for a crop (read-only): the cropped output whose pixels per
+/// degree match the sources' centre resolution, plus that resolution for display.
+fn native_export_size(shared: &SharedState, payload: &Value) -> Result<Value, String> {
+    let proj = shared.project.lock().map_err(|_| "Project lock poisoned")?;
+    if proj.doc.images.is_empty() {
+        return Ok(json!({"width": null, "height": null}));
+    }
+    let crop = payload
+        .get("crop")
+        .and_then(Value::as_array)
+        .filter(|c| c.len() == 4)
+        .and_then(|c| {
+            let v: Vec<f64> = c.iter().filter_map(Value::as_f64).collect();
+            (v.len() == 4 && v.iter().all(|x| x.is_finite())).then(|| [v[0], v[1], v[2], v[3]])
+        })
+        .unwrap_or([0.0, 0.0, 1.0, 1.0]);
+    let aspect = effective_aspect(
+        &proj.doc,
+        f64::from(proj.preview_width) / f64::from(proj.preview_height.max(1)),
+    );
+    let view = BandViewParams {
+        view_yaw_deg: proj.doc.view_yaw_deg,
+        view_pitch_deg: proj.doc.view_pitch_deg,
+        view_v_shift: proj.doc.view_v_shift,
+        crop,
+        canvas_aspect: Some(aspect),
+    };
+    let size = slashstitch_core::render::native_output_size(
+        proj.doc.projection,
+        proj.doc.pano_hfov_deg,
+        &view,
+        &proj.doc.images,
+    );
+    let ppd = slashstitch_core::render::source_center_px_per_deg(&proj.doc.images);
+    Ok(match size {
+        Some((w, h)) => json!({"width": w, "height": h, "source_px_per_deg": ppd}),
+        None => json!({"width": null, "height": null}),
+    })
 }
 fn compute_auto_crop(shared: &SharedState) -> Result<[f64; 4], String> {
     use slashstitch_core::{pano_uv_to_ray_shifted, ray_to_image_px, rotate_view_ray};

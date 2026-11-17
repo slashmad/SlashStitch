@@ -2102,7 +2102,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slashstitch-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "image",
  "kamadak-exif",
@@ -2124,7 +2124,7 @@ dependencies = [
 
 [[package]]
 name = "slashstitch-gpu"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bytemuck",
  "image",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "slashstitch-worker"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "image",
  "libc",

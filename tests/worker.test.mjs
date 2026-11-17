@@ -358,3 +358,16 @@ test('real worker: impossible exports are refused before any job or allocation (
  assert.ok(!worker.events.some(e=>e.event==='job-state'&&e.data.state==='running'),'no job started');
  assert.equal((await worker.call('ping',{})).ok,true);
 });
+
+test('real worker: full-resolution export size follows the crop and is read-only',async t=>{
+ const{worker,a,b}=await fixture(t);
+ assert.deepEqual((await worker.success('native-export-size',{crop:[0,0,1,1]})),{width:null,height:null});
+ await worker.success('load-images',{paths:[a,b],replace:true});
+ const full=await worker.success('native-export-size',{crop:[0,0,1,1]});
+ assert.ok(Number.isInteger(full.width)&&full.width>0&&Number.isInteger(full.height)&&full.height>0,JSON.stringify(full));
+ assert.ok(full.source_px_per_deg>0);
+ const half=await worker.success('native-export-size',{crop:[0.25,0,0.75,1]});
+ assert.ok(Math.abs(half.width-full.width/2)<=2&&Math.abs(half.height-full.height)<=1,JSON.stringify({full,half}));
+ assert.deepEqual(await worker.success('native-export-size',{crop:'bad'}),full);
+ assert.equal(worker.state,'idle');
+});

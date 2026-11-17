@@ -2,10 +2,39 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
-.app { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; overflow: hidden; }
+.app { position: relative; display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100%; overflow: hidden; }
+
+/* Title bar: a drag region; interactive children opt out. Native window controls overlay the
+   right end on Windows/Linux (titlebar-area-* env variables), traffic lights the left on macOS. */
+.titlebar { grid-column: 1 / -1; height: var(--titlebar-h); display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--chrome); color: var(--chrome-text); border-bottom: 1px solid var(--line); -webkit-app-region: drag; user-select: none; font-size: 12.5px; }
+.titlebar-overlay { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 10px); }
+.titlebar-mac { padding-left: 80px; }
+.titlebar button { -webkit-app-region: no-drag; }
+.titlebar-icon { width: 18px; height: 18px; border-radius: 4px; }
+.titlebar-name { font-weight: 700; letter-spacing: 0.01em; color: #a9c4ff; }
+.titlebar-sep { width: 1px; height: 14px; background: var(--line-2); }
+.titlebar-project { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+.titlebar-drag { flex: 1 1 auto; align-self: stretch; }
+.titlebar .tb-pill, .titlebar .tb-icon { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid transparent; background: transparent; color: var(--chrome-text); font-size: 12px; }
+.titlebar .tb-icon { width: 26px; padding: 0; justify-content: center; }
+.titlebar .tb-pill:hover, .titlebar .tb-icon:hover, .titlebar .tb-icon[aria-expanded="true"] { background: var(--chrome-hover); border-color: var(--line-2); }
+.titlebar-sponsor { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb, var(--sponsor) 55%, transparent); border-radius: 12px; }
+.titlebar .tb-sponsor { color: var(--sponsor); border: 0; padding-right: 4px; }
+.titlebar .tb-sponsor:hover { background: color-mix(in srgb, var(--sponsor) 14%, transparent); }
+.titlebar .tb-dismiss { height: 24px; width: 20px; padding: 0; border: 0; border-radius: 0 12px 12px 0; background: transparent; color: color-mix(in srgb, var(--sponsor) 70%, var(--chrome-text)); font-size: 13px; line-height: 1; opacity: 0.55; }
+.titlebar .tb-dismiss:hover { opacity: 1; background: color-mix(in srgb, var(--sponsor) 14%, transparent); }
+.titlebar-version { font: 11.5px/1 ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", monospace; color: var(--muted); padding: 0 2px; }
+.titlebar-about { position: relative; display: inline-flex; }
+.about-popover { position: absolute; top: 30px; right: 0; z-index: 60; width: 270px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: var(--shadow); -webkit-app-region: no-drag; user-select: text; cursor: default; }
+.about-head { display: flex; gap: 10px; align-items: center; }
+.about-head img { border-radius: 7px; }
+.about-engine { font-size: 12px; }
+.about-links { display: flex; gap: 12px; flex-wrap: wrap; }
+.link-button { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
+.link-button:hover:not(:disabled) { background: none; text-decoration: underline; }
+.about-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
 .topbar { min-height:40px; flex-wrap:wrap; padding-top:4px; padding-bottom:4px; grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 700; color: #a9c4ff; }
-.proj { font-weight: 600; padding: 2px 8px; background: var(--panel-2); border-radius: 4px; }
 .grow { flex: 1; }
 .left-panel, .right-panel { background: var(--panel); padding: 10px; overflow: auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .center { position: relative; min-width: 0; overflow: hidden; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -82,8 +111,11 @@ button.mini { padding: 2px 6px; font-size: 12px; }
 .progress-bar { height: 100%; background: var(--accent); transition: width 120ms linear; }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-.tab { flex: 1; text-align: center; font-size: 12px; }
-.tab.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+/* Panel tabs share the width equally and never wrap; a long label is ellipsized. */
+.tab { flex: 1 1 0; min-width: 0; height: 28px; padding: 0 6px; text-align: center; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab.active, .toggle.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+/* Toolbar buttons keep their natural size; being active never changes their width. */
+.viewport-toolbar button, .viewport-toolbar .seg-group, .topbar > button { flex: none; white-space: nowrap; }
 .inspector-body { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
 .inspector-body h3 { margin: 4px 0; font-size: 13px; }
 .kv { display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 4px 8px; margin: 0; }

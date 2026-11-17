@@ -1,25 +1,27 @@
 import { randomUUID } from "node:crypto";
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { arch, release, tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { WorkerBridge, type WorkerReply } from "./worker";
 import { ShutdownGate } from "./lifecycle";
 import { protectSources, writeJsonAtomic } from "./storage";
 import { downloadLensfunSnapshot } from "./lensfun-update";
+import { linkFor } from "./app-links";
 
 app.setName("SlashStitch");
 const userData = app.getPath("userData");
 const settingsFile = join(userData, "settings.json");
 const recoveryFile = join(userData, "recovery.ssp");
 const lensfunPointer = join(userData, "lensfun-active.json");
-let settings = { width: 1440, height: 900, displayBackend: "auto" };
+let settings = { width: 1440, height: 900, displayBackend: "auto", showSponsor: true };
 try {
   const saved = JSON.parse(readFileSync(settingsFile, "utf8"));
   if (["auto", "wayland", "x11"].includes(saved.displayBackend)) settings.displayBackend = saved.displayBackend;
   for (const key of ["width", "height"] as const) if (Number.isFinite(saved[key])) settings[key] = Math.round(Math.min(10000, Math.max(600, saved[key])));
+  if (typeof saved.showSponsor === "boolean") settings.showSponsor = saved.showSponsor;
 } catch { /* First launch or invalid settings. */ }
 if (process.platform === "linux") {
   const requested = process.env.SLASHSTITCH_DISPLAY || app.commandLine.getSwitchValue("ozone-platform") || settings.displayBackend;
@@ -224,7 +226,13 @@ function quit(): void {
   closing = (async () => { if (await confirmDiscard(true) && await gate.request()) app.quit(); })().catch(error=>dialog.showErrorBox("Could not close safely",(error as Error).message)).finally(() => { closing = null; });
 }
 function createWindow(): void {
-  win = new BrowserWindow({ ...settings, minWidth: 1100, minHeight: 680, title: app.getName(), backgroundColor: "#16181d", autoHideMenuBar: true,
+  // The renderer draws the title bar (TitleBar.tsx). Windows/Linux keep native window controls
+  // as an overlay at the right; macOS keeps its traffic lights at the left.
+  const titleBar = process.platform === "darwin"
+    ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 12, y: 11 } }
+    : { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#111318", symbolColor: "#c4cad4", height: 36 } };
+  const { width, height } = settings;
+  win = new BrowserWindow({ width, height, ...titleBar, minWidth: 1100, minHeight: 680, title: app.getName(), backgroundColor: "#16181d", autoHideMenuBar: true,
     icon: join(__dirname, "../renderer/icon-256.png"), webPreferences: { preload: join(__dirname, "../preload/index.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", event => event.preventDefault());
@@ -275,7 +283,19 @@ app.whenReady().then(() => {
     const p = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
     try {
       switch (action) {
-        case "shell-info": return ok({ platform: process.platform, version: app.getVersion(), jobState, dirty, projectFile, engineAvailable, recoveryAvailable: Boolean(savedRecovery) });
+        case "shell-info": return ok({ platform: process.platform, version: app.getVersion(), jobState, dirty, projectFile, engineAvailable, recoveryAvailable: Boolean(savedRecovery), showSponsor: settings.showSponsor });
+        case "open-link": {
+          const url = linkFor(p.key, { version: app.getVersion(), platform: process.platform, arch: arch(), osRelease: release(), electron: process.versions.electron, engine: p.engine });
+          if (!url) return fail("Unknown link.");
+          await shell.openExternal(url); return ok(null);
+        }
+        case "set-ui-preferences": {
+          if (typeof p.showSponsor === "boolean") {
+            settings = { ...settings, showSponsor: p.showSponsor };
+            mkdirSync(userData, { recursive: true }); writeJsonAtomic(settingsFile, settings);
+          }
+          return ok({ showSponsor: settings.showSponsor });
+        }
         case "close-window": setTimeout(() => win?.close(), 50); return ok(null);
         case "quit-app": setTimeout(quit, 50); return ok(null);
         case "ui-snapshot": {
@@ -365,7 +385,7 @@ app.whenReady().then(() => {
         }
         case "render-exact": case "cancel-exact": case "render-seams": return worker.request(action, payload, 15_000);
         case "job-cancel": case "demo-stop": databaseAbort?.abort(new Error("Database update cancelled"));return worker.request("job-cancel");
-        case "echo": case "engine-info": case "lensfun-search": case "job-status": return worker.request(action, payload, 15_000);
+        case "echo": case "engine-info": case "lensfun-search": case "job-status": case "native-export-size": return worker.request(action, payload, 15_000);
         case "inspect-images": case "clear-images": case "update-image-pose": case "restore-poses": case "restore-project": case "snapshot-project": case "reoptimize": case "set-view": case "render-preview": case "auto-crop": case "reapply-lensfun": case "auto-align": case "preview-start": case "demo-start": case "set-color-settings": case "set-render-settings":
           return await mutate(action, payload);
         default: return fail("Unknown action");

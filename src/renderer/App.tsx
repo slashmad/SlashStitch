@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type PointerEvent, type WheelEvent } from "react";
 import { ProjectionPicker } from "./ProjectionPicker";
+import { TitleBar } from "./TitleBar";
 
 type Interp = "bilinear" | "spline36" | "lanczos3";
 interface StitchSettings { multiband: boolean; blendWidth: number; interpolation: Interp; optimizeSeams: boolean; exposure: boolean; vignetting: boolean; transients: boolean }
@@ -209,6 +210,8 @@ export function App() {
   const [progress, setProgress] = useState<{ percent: number; stage: string } | null>(null);
   const [engine, setEngine] = useState<EngineInfo | null>(null);
   const [metas, setMetas] = useState<SourceImageMeta[]>([]);
+  const [shellInfo, setShellInfo] = useState<{ platform: string; version: string }>({ platform: "", version: "" });
+  const [showSponsor, setShowSponsor] = useState(true);
   const [poses, setPoses] = useState<SourceImagePose[]>([]);
   const [controlPoints, setControlPoints] = useState<ControlPoint[]>([]);
   const controlPointsRef = useRef(controlPoints);
@@ -222,6 +225,28 @@ export function App() {
   const viewQueue = useRef<Promise<void>>(Promise.resolve());
   const [selectedIdx, setSelectedIdx] = useState<number>(0);
   const [dragOver, setDragOver] = useState(false);
+  // Chromium sends dragover continuously while a drag hovers the page. Leaving through the
+  // title bar (a window-drag region that receives no drag events), leaving the window or
+  // cancelling with Escape may never deliver dragleave, so the overlay hides itself when the
+  // dragover stream stops.
+  const lastDragOver = useRef(0);
+  useEffect(() => {
+    if (!dragOver) return;
+    const timer = window.setInterval(() => {
+      if (performance.now() - lastDragOver.current > 350) setDragOver(false);
+    }, 150);
+    const hide = () => setDragOver(false);
+    window.addEventListener("blur", hide);
+    window.addEventListener("dragend", hide);
+    window.addEventListener("pointermove", hide);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("blur", hide);
+      window.removeEventListener("dragend", hide);
+      window.removeEventListener("pointermove", hide);
+    };
+  }, [dragOver]);
+  const isFileDrag = (e: DragEvent<HTMLDivElement>) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
   const [projection, setProjection] = useState("equirectangular");
   const [panoHfov, setPanoHfov] = useState(120);
@@ -289,6 +314,10 @@ export function App() {
   const [exportPath, setExportPath] = useState("");
   const [exportWidth, setExportWidth] = useState(4096);
   const [exportHeight, setExportHeight] = useState(2048);
+  // Export size: a percentage of the full-resolution size (sources kept 1:1 at their centres)
+  // or "custom" once the user types a width/height.
+  const [exportScale, setExportScale] = useState<number | "custom">(100);
+  const [nativeSize, setNativeSize] = useState<{ width: number; height: number; ppd: number } | null>(null);
   const [outputBitDepth, setOutputBitDepth] = useState<number>(8);
   const [colorProfile, setColorProfile] = useState<string>("srgb");
   const [customIccName, setCustomIccName] = useState<string | null>(null);
@@ -483,7 +512,7 @@ export function App() {
 
     void window.Host.call("shell-info").then((reply) => {
       if (reply.ok) {
-        const info=JSON.parse(reply.text);setState(info.jobState);setProjectPath(info.projectFile);setProjectDirty(info.dirty);setEngineAvailable(info.engineAvailable);setRecoveryAvailable(info.recoveryAvailable);
+        const info=JSON.parse(reply.text);setShellInfo({platform:info.platform,version:info.version});setShowSponsor(info.showSponsor!==false);setState(info.jobState);setProjectPath(info.projectFile);setProjectDirty(info.dirty);setEngineAvailable(info.engineAvailable);setRecoveryAvailable(info.recoveryAvailable);
       }
     });
     void window.Host.call("engine-info").then((reply) => {
@@ -697,7 +726,7 @@ export function App() {
     }
   };
 
-  const uiSettings=useCallback(()=>({crop,exportPath,exportWidth,exportHeight,multiband,forceBigTiff,optimizeHfov,levelHorizon,optimizeDistortion,prioritizeSky,lockExportAspect}),[crop,exportPath,exportWidth,exportHeight,multiband,forceBigTiff,optimizeHfov,levelHorizon,optimizeDistortion,prioritizeSky,lockExportAspect]);
+  const uiSettings=useCallback(()=>({crop,exportPath,exportWidth,exportHeight,exportScale,multiband,forceBigTiff,optimizeHfov,levelHorizon,optimizeDistortion,prioritizeSky,lockExportAspect}),[crop,exportPath,exportWidth,exportHeight,exportScale,multiband,forceBigTiff,optimizeHfov,levelHorizon,optimizeDistortion,prioritizeSky,lockExportAspect]);
   const suppressUiDirty=useRef(false);
   const uiSettingsRef=useRef(uiSettings);uiSettingsRef.current=uiSettings;
   useEffect(()=>{
@@ -705,7 +734,7 @@ export function App() {
     if (!poses.length) return;
     const timer=setTimeout(()=>{void window.Host.call("mark-ui-dirty",uiSettingsRef.current());},200);
     return ()=>clearTimeout(timer);
-  },[crop,exportPath,exportWidth,exportHeight,multiband,forceBigTiff,optimizeHfov,levelHorizon,optimizeDistortion,prioritizeSky,lockExportAspect]);
+  },[crop,exportPath,exportWidth,exportHeight,exportScale,multiband,forceBigTiff,optimizeHfov,levelHorizon,optimizeDistortion,prioritizeSky,lockExportAspect]);
   const saveProject=useCallback(async(saveAs=false)=>{if(stateRef.current!=="idle" && engineAvailable)return;await run("save-project",{ui:uiSettingsRef.current(),saveAs});},[engineAvailable,run]);
   const acceptProject=useCallback(async(data:Record<string,any>)=>{
     if (data.canceled || !data.project) return;
@@ -719,6 +748,10 @@ export function App() {
     if(savedCrop && [savedCrop.left,savedCrop.top,savedCrop.right,savedCrop.bottom].every(Number.isFinite) && savedCrop.left>=0 && savedCrop.top>=0 && savedCrop.right<=1 && savedCrop.bottom<=1 && savedCrop.right>savedCrop.left && savedCrop.bottom>savedCrop.top)setCrop(savedCrop);else setCrop(FULL_CROP);
     if(Number.isInteger(ui.exportWidth)&&ui.exportWidth>0&&ui.exportWidth<=200000)setExportWidth(ui.exportWidth);
     if(Number.isInteger(ui.exportHeight)&&ui.exportHeight>0&&ui.exportHeight<=200000)setExportHeight(ui.exportHeight);
+    // Projects saved before full-resolution sizing kept the old 4096×2048 default: treat that
+    // as "full resolution"; any other saved size stays as the user's custom size.
+    if(ui.exportScale==="custom"||[100,75,50,25].includes(ui.exportScale))setExportScale(ui.exportScale);
+    else setExportScale(ui.exportWidth===undefined||(ui.exportWidth===4096&&ui.exportHeight===2048)?100:"custom");
     if(typeof ui.exportPath==="string")setExportPath(ui.exportPath);
     if(typeof ui.multiband==="boolean")setMultiband(ui.multiband);
     if(typeof ui.forceBigTiff==="boolean")setForceBigTiff(ui.forceBigTiff);
@@ -1235,15 +1268,38 @@ export function App() {
   const adoptCandidateMeta = adoptCandidateIdx >= 0 ? metas[adoptCandidateIdx] : null;
 
   useEffect(()=>{
-    if(lockExportAspect && poses.length) setExportHeight(Math.min(200000,Math.max(1,Math.round(exportWidth/Math.max(0.01,cropAspect)))));
-  },[lockExportAspect,exportWidth,cropAspect,poses.length]);
+    if(lockExportAspect && poses.length && exportScale==="custom") setExportHeight(Math.min(200000,Math.max(1,Math.round(exportWidth/Math.max(0.01,cropAspect)))));
+  },[lockExportAspect,exportWidth,cropAspect,poses.length,exportScale]);
+  // Full-resolution size follows crop, projection, view and geometry (debounced, read-only).
+  useEffect(()=>{
+    if(!poses.length||!engineAvailable){setNativeSize(null);return;}
+    let live=true;
+    const timer=window.setTimeout(()=>{
+      void window.Host.call("native-export-size",{crop:[crop.left,crop.top,crop.right,crop.bottom]}).then(reply=>{
+        if(!live||!reply.ok)return;
+        const r=JSON.parse(reply.text) as {width:number|null;height:number|null;source_px_per_deg?:number};
+        setNativeSize(r.width&&r.height?{width:r.width,height:r.height,ppd:r.source_px_per_deg??0}:null);
+      });
+    },250);
+    return()=>{live=false;window.clearTimeout(timer);};
+  },[crop,projection,panoHfov,viewYaw,viewPitch,viewVShift,poses,engineAvailable]);
+  useEffect(()=>{
+    if(exportScale==="custom"||!nativeSize)return;
+    setExportWidth(Math.max(1,Math.min(200000,Math.round(nativeSize.width*exportScale/100))));
+    setExportHeight(Math.max(1,Math.min(200000,Math.round(nativeSize.height*exportScale/100))));
+  },[exportScale,nativeSize]);
+
+  const projectName = projectPath?.split(/[\\/]/).at(-1) ?? "untitled.ssp";
+  useEffect(() => {
+    document.title = `${projectDirty ? "• " : ""}${projectName} — SlashStitch`;
+  }, [projectName, projectDirty]);
 
   return (
     <div
       className="app"
       ref={layout}
-      onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
-      onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+      onDragEnter={(e) => { if (!isFileDrag(e)) return; e.preventDefault(); lastDragOver.current = performance.now(); setDragOver(true); }}
+      onDragOver={(e) => { if (!isFileDrag(e)) return; e.preventDefault(); lastDragOver.current = performance.now(); if (!dragOver) setDragOver(true); }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
       onDrop={handleDrop}
     >
@@ -1253,9 +1309,20 @@ export function App() {
         </div>
       )}
 
+      <TitleBar
+        platform={shellInfo.platform}
+        version={shellInfo.version}
+        projectName={projectName}
+        projectPath={projectPath}
+        dirty={projectDirty}
+        engine={engine ? `${engine.gpu_backend} · ${engine.cpu_threads} threads` : ""}
+        showSponsor={showSponsor}
+        onShowSponsor={(show) => {
+          setShowSponsor(show);
+          void window.Host.call("set-ui-preferences", { showSponsor: show });
+        }}
+      />
       <header className="topbar">
-        <span className="brand">SlashStitch</span>
-        <span className="proj" title={projectPath??"Unsaved project"}>{projectPath?.split(/[\\/]/).at(-1)??"untitled.ssp"}{projectDirty?" *":""}</span>
         <button disabled={state!=="idle"} onClick={()=>void openProject()} title="Open Project (Ctrl+Shift+O)">Open</button>
         <button disabled={state!=="idle" && engineAvailable} onClick={()=>void saveProject()} title="Save Project (Ctrl+S; Shift for Save As)">Save</button>
         {recoveryAvailable&&<button disabled={state!=="idle"} onClick={()=>void openProject("recover-project")}>Recover</button>}
@@ -1390,7 +1457,7 @@ export function App() {
               <span className="seg-group" role="group" aria-label="Drag mode">
                 <button
                   disabled={state !== "idle"}
-                  className={dragMode === "view" && !spaceHeld ? "mini tab active" : "mini"}
+                  className={dragMode === "view" && !spaceHeld ? "mini toggle active" : "mini"}
                   title="Left-drag shifts the stitched panorama (Yaw / V-Shift)"
                   onClick={() => setDragMode("view")}
                 >
@@ -1398,18 +1465,18 @@ export function App() {
                 </button>
                 <button
                   disabled={state !== "idle"}
-                  className={dragMode === "pan" || spaceHeld ? "mini tab active" : "mini"}
+                  className={dragMode === "pan" || spaceHeld ? "mini toggle active" : "mini"}
                   title="Left-drag (or Space/Right/Alt+drag) moves the whole canvas inside the workspace"
                   onClick={() => setDragMode("pan")}
                 >
                   Pan Canvas
                 </button>
               </span>
-              <button disabled={state!=="idle"} className={cropMode ? "mini tab active" : "mini"} title="Toggle crop handles (drag edges/corners)" onClick={() => setCropMode((v) => !v)}>
+              <button disabled={state!=="idle"} className={cropMode ? "mini toggle active" : "mini"} title="Toggle crop handles (drag edges/corners)" onClick={() => setCropMode((v) => !v)}>
                 Crop
               </button>
               <button
-                className={showSeams ? "mini tab active" : "mini"}
+                className={showSeams ? "mini toggle active" : "mini"}
                 aria-pressed={showSeams}
                 title="Show a coloured frame around every source image and the exact blend seams used by the export"
                 onClick={() => setShowSeams(v => !v)}
@@ -1548,10 +1615,10 @@ export function App() {
 
       <aside className="right-panel">
         <div className="tabs">
-          <button className={tab === "lens" ? "tab active" : "tab"} onClick={() => setTab("lens")}>Lens &amp; Pose</button>
-          <button className={tab === "optimizer" ? "tab active" : "tab"} onClick={() => setTab("optimizer")}>Optimizer</button>
-          <button className={tab === "lensdb" ? "tab active" : "tab"} onClick={() => setTab("lensdb")}>Lensfun DB</button>
-          <button className={tab === "export" ? "tab active" : "tab"} onClick={() => setTab("export")}>Export</button>
+          <button className={tab === "lens" ? "tab active" : "tab"} title="Lens & Pose" onClick={() => setTab("lens")}>Lens &amp; Pose</button>
+          <button className={tab === "optimizer" ? "tab active" : "tab"} title="Optimizer" onClick={() => setTab("optimizer")}>Optimizer</button>
+          <button className={tab === "lensdb" ? "tab active" : "tab"} title="Lensfun DB" onClick={() => setTab("lensdb")}>Lensfun DB</button>
+          <button className={tab === "export" ? "tab active" : "tab"} title="Export" onClick={() => setTab("export")}>Export</button>
         </div>
 
         {tab === "lens" && (
@@ -1778,13 +1845,33 @@ export function App() {
                 <span>JPEG only supports 8 bits per channel. Switch Output Bit Depth to 8 bits/ch, or export to TIFF/BigTIFF or PNG for {outputBitDepth}-bit precision.</span>
               </div>
             )}
+            <label className="field-label" htmlFor="export-scale">Size</label>
+            <select
+              id="export-scale"
+              value={String(exportScale)}
+              onChange={(e) => setExportScale(e.target.value === "custom" ? "custom" : Number(e.target.value))}
+              title="Full resolution keeps the source images' pixel density at their centres (1:1)."
+            >
+              {[100, 75, 50, 25].map((pct) => (
+                <option key={pct} value={pct}>
+                  {pct === 100 ? "Full resolution" : `${pct} %`}
+                  {nativeSize ? ` — ${Math.round(nativeSize.width * pct / 100)} × ${Math.round(nativeSize.height * pct / 100)} px` : ""}
+                </option>
+              ))}
+              <option value="custom">Custom size</option>
+            </select>
+            {nativeSize && (
+              <div className="muted">
+                {((exportWidth * exportHeight) / 1e6).toFixed(0)} MP · full resolution {nativeSize.width} × {nativeSize.height} px ({nativeSize.ppd.toFixed(1)} px/° at the source image centres)
+              </div>
+            )}
             <div className="pose-grid">
-              <label>Width (px)<input type="number" min={64} step={64} value={exportWidth} onChange={(e) => setExportWidth(Number(e.target.value))} /></label>
-              <label>Height (px)<input type="number" min={64} step={64} value={exportHeight} onChange={(e) => {const value=Number(e.target.value);setExportHeight(value);if(lockExportAspect)setExportWidth(Math.max(1,Math.min(200000,Math.round(value*cropAspect))));}} /></label>
+              <label>Width (px)<input type="number" min={64} step={64} value={exportWidth} onChange={(e) => {setExportScale("custom");setExportWidth(Number(e.target.value));}} /></label>
+              <label>Height (px)<input type="number" min={64} step={64} value={exportHeight} onChange={(e) => {const value=Number(e.target.value);setExportScale("custom");setExportHeight(value);if(lockExportAspect)setExportWidth(Math.max(1,Math.min(200000,Math.round(value*cropAspect))));}} /></label>
             </div>
             <label className="check-row"><input type="checkbox" checked={lockExportAspect} onChange={e=>setLockExportAspect(e.target.checked)}/>Keep crop aspect ratio</label>
             <div className="export-row">
-              <button className="mini" onClick={() => setExportHeight(Math.max(64, Math.round(exportWidth / Math.max(0.1, cropAspect))))}>
+              <button className="mini" onClick={() => {setExportScale("custom");setExportHeight(Math.max(64, Math.round(exportWidth / Math.max(0.1, cropAspect))));}}>
                 Match Crop Aspect
               </button>
               <button className="mini" disabled={poses.length === 0} onClick={() => void runAutoCrop()}>
