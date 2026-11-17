@@ -1127,14 +1127,22 @@ export function App() {
       }return n;
     });
   };
+  const dropQueue = useRef<Promise<void>>(Promise.resolve());
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
-    if (stateRef.current !== "idle") return;
+    // Paths must be read during the event; the import may wait for a short job that is still
+    // finishing (e.g. the preview after a previous import) instead of being dropped silently.
     const files = Array.from(e.dataTransfer.files);
     const paths = files.map((f) => window.Host.getPathForFile(f)).filter(Boolean);
-    if (paths.length > 0) void loadPaths(paths);
+    if (paths.length === 0) return;
+    // Drops are queued: each waits for the previous import to finish (the host accepts one
+    // mutation at a time, and its job state reaches the renderer only after a short delay).
+    dropQueue.current = dropQueue.current.then(async () => {
+      if (await waitForIdle()) await loadPaths(paths);
+      else setError("A job is still running. Drop the images again when it has finished.");
+    }).catch((error) => setError(String(error)));
   };
 
   const selectedMeta = metas[selectedIdx] ?? null;
