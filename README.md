@@ -59,7 +59,7 @@ and React interface provides a live workbench with GPU preview and full-resoluti
 
 ![Projection menu with thirteen panorama choices](docs/images/projections.png)
 
-![Export controls with Adobe RGB, bit depth, crop and stitch settings](docs/images/export.png)
+![Export controls with full-resolution size, Adobe RGB and bit depth](docs/images/export.png)
 
 </details>
 
@@ -96,7 +96,8 @@ baseline for that binary, not a guarantee for every Linux desktop.
 2. Choose **Auto Align** and inspect the result. Moving skies, water and nearby foreground
    can need different compromises; a low control-point error does not make moving content identical.
 3. Pick a projection, adjust the view and crop. Toggle **Seams** to inspect the contributing frames.
-4. Choose a stitch preset, colour profile and bit depth in **Export**, then save the panorama.
+4. In **Export**, keep **Full resolution** (or pick a smaller size), choose a stitch preset,
+   colour profile and bit depth, then save the panorama.
 5. Save an `.ssp` project to return to the alignment and settings later. Keep its source images.
 
 The [user guide](docs/USER_GUIDE.md) covers shortcuts, lens models, colour management,
@@ -113,13 +114,16 @@ Sources retain up to 16 bits per channel. **10-bit output uses 1024 levels store
 JPEG supports 8 bits per channel. Higher-bit-depth export cannot recover detail absent from
 8-bit originals. RGB ICC profiles are supported; LUT-only output profiles without RGB tone
 curves are rejected. Transparent and non-RGB sources must be flattened or converted first.
-Camera RAW development is neutral: RCD demosaicing, as-shot (or Lightroom) white balance, the
-camera colour matrix, exposure and a smooth highlight shoulder, without a camera "look", contrast curve or
-noise reduction. Lightroom tone, presence, HSL, colour grading, profiles, crops and local
-adjustments are not reproduced; each image lists what was applied and what was not. A DNG's
-enhanced image (e.g. Lightroom Denoise) is used when it can be decoded; otherwise the original
-sensor data is developed and the image info says so. Exposure brackets are detected and shown,
-but merging them into HDR is not implemented yet: bracketed frames are stitched individually.
+Camera RAW development is neutral: RCD demosaicing (Fujifilm X-Trans sensors use a simpler
+bilinear method), as-shot (or Lightroom) white balance, the camera colour matrix, exposure and
+a smooth highlight shoulder, without a camera "look", contrast curve or noise reduction.
+Lightroom tone, presence, HSL, colour grading, profiles, crops and local adjustments are not
+reproduced; each image lists what was applied and what was not. A DNG's enhanced image (e.g.
+Lightroom Denoise) is used when it can be decoded; otherwise the original sensor data is
+developed and the image info says so. RAW support has been exercised with Sony ARW and
+Lightroom DNG files; other cameras rely on rawler's format support. Exposure brackets are
+detected and shown, but merging them into HDR is not implemented yet: bracketed frames are
+stitched individually.
 Development sample photographs and camera originals are not distributed.
 
 Large sources use a disk cache and memory reservations. Limits adapt to memory and disk space;
