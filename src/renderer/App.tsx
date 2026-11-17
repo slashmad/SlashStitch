@@ -51,6 +51,19 @@ interface SourceImageMeta {
   estimated_lens_projection: string;
   estimated_hfov_deg: number | null;
   warnings: string[];
+  exposure_time_s?: number | null;
+  exposure_bias_ev?: number | null;
+  bracket?: { stack: number; index: number; size: number; relative_ev: number } | null;
+}
+
+function formatExposure(meta: SourceImageMeta): string {
+  const parts: string[] = [];
+  const t = meta.exposure_time_s;
+  if (t) parts.push(t >= 1 ? `${Number(t.toFixed(1))} s` : `1/${Math.round(1 / t)} s`);
+  if (meta.aperture) parts.push(`f/${Number(meta.aperture.toFixed(1))}`);
+  if (meta.iso) parts.push(`ISO ${meta.iso}`);
+  if (meta.exposure_bias_ev) parts.push(`${meta.exposure_bias_ev > 0 ? "+" : ""}${Number(meta.exposure_bias_ev.toFixed(2))} EV`);
+  return parts.join(" · ") || "—";
 }
 
 interface SourceImagePose {
@@ -1553,6 +1566,8 @@ export function App() {
                   <dt>Camera</dt><dd>{[selectedMeta.camera_make, selectedMeta.camera_model].filter(Boolean).join(" ") || "—"}</dd>
                   <dt>EXIF Lens</dt><dd>{selectedMeta.lens_model ?? "—"}</dd>
                   <dt>Lensfun Match</dt><dd>{selectedMeta.matched_lens ?? "Inferred from EXIF"}</dd>
+                  <dt>Exposure</dt><dd>{formatExposure(selectedMeta)}</dd>
+                  {selectedMeta.bracket&&<><dt>HDR Stack</dt><dd title="Detected exposure bracket. Merging stacks into HDR is not implemented yet: bracketed frames are stitched as individual sources.">#{selectedMeta.bracket.stack+1} · frame {selectedMeta.bracket.index+1}/{selectedMeta.bracket.size} · {selectedMeta.bracket.relative_ev>=0?"+":""}{selectedMeta.bracket.relative_ev.toFixed(1)} EV</dd></>}
                   <dt>Bit Depth</dt><dd>{selectedMeta.bit_depth ? `${selectedMeta.bit_depth}-bit/ch` : "Unknown"}</dd>
                   <dt>Color Profile</dt><dd>{selectedMeta.icc_profile_name ?? (selectedMeta.icc_status === "invalid" ? "Unreadable ICC (assumed sRGB)" : selectedMeta.icc_status === "unsupported_colorspace" ? "Non-RGB ICC" : "No embedded ICC (assumed sRGB)")}</dd>
                   <dt>Distortion</dt><dd className="mono">{selectedPose.distortion_poly5?`Poly5 ${selectedPose.distortion_poly5.join(", ")}`:`PTLens ${selectedPose.distortion.map(v=>v.toFixed(4)).join(", ")}`} · scale {(selectedPose.distortion_scale??1).toFixed(3)}</dd>

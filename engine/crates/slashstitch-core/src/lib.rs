@@ -6,6 +6,7 @@ pub mod color;
 pub mod exporter;
 pub mod features;
 pub mod files;
+pub mod hdr;
 pub mod image_meta;
 pub mod lensfun;
 pub mod memory;
@@ -14,6 +15,7 @@ pub mod optimizer;
 pub mod photometric;
 pub mod project;
 pub mod raster;
+pub mod rawdev;
 pub mod render;
 
 pub use blend::{

@@ -136,7 +136,10 @@ async function mutate(action: string, payload: unknown = null, timeout = 90_000)
     return reply;
   } finally { pendingMutation = false; }
 }
-const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"]);
+// Camera RAW/DNG extensions, kept in sync with RAW_EXTENSIONS in the engine (rawdev.rs).
+const RAW_EXTS = ["3fr", "ari", "arw", "cr2", "cr3", "crw", "dcr", "dcs", "dng", "erf", "iiq", "kdc", "mef", "mos", "mrw", "nef", "nrw", "orf", "pef", "raf", "rw2", "sr2", "srf", "srw", "x3f"];
+const RASTER_EXTS = ["jpg", "jpeg", "png", "tif", "tiff", "webp"];
+const IMAGE_EXTS = new Set([...RASTER_EXTS, ...RAW_EXTS].map(ext => `.${ext}`));
 async function expandImagePaths(paths: string[]): Promise<{paths:string[];failures:string[]}> {
   if(paths.length>128)throw new Error("At most 128 sources can be imported at once.");
   const out=new Set<string>();const failures:string[]=[];
@@ -313,7 +316,7 @@ app.whenReady().then(() => {
         }
         case "pick-images": {
           if (busy()) return fail("Wait for the active job before importing.");
-          const result = await dialog.showOpenDialog(win, { title: "Add Source Images", properties: ["openFile", "multiSelections"], filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "tif", "tiff", "webp"] }] }); return ok({ canceled: result.canceled, paths: result.filePaths });
+          const result = await dialog.showOpenDialog(win, { title: "Add Source Images", properties: ["openFile", "multiSelections"], filters: [{ name: "Images and Camera RAW", extensions: [...RASTER_EXTS, ...RAW_EXTS, ...RAW_EXTS.map(ext => ext.toUpperCase())] }, { name: "Camera RAW / DNG", extensions: [...RAW_EXTS, ...RAW_EXTS.map(ext => ext.toUpperCase())] }, { name: "Images", extensions: RASTER_EXTS }] }); return ok({ canceled: result.canceled, paths: result.filePaths });
         }
         case "pick-export-file": {
           const result = await dialog.showSaveDialog(win, { title: "Export Panorama", defaultPath: "panorama.tif", filters: [{ name: "TIFF / BigTIFF", extensions: ["tif", "tiff"] }, { name: "JPEG", extensions: ["jpg", "jpeg"] }, { name: "PNG", extensions: ["png"] }] }); return ok({ canceled: result.canceled, path: result.filePath ?? null });

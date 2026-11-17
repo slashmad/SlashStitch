@@ -41,6 +41,10 @@ and React interface provides a live workbench with GPU preview and full-resoluti
   Balanced, Night sky & aurora, Sharp detail and Fast draft presets group the settings.
 - **Control colour and precision:** 8-, 10- or 16-bit output with sRGB, Adobe RGB, Display P3,
   ProPhoto RGB, Rec.2020 or a supported custom/source RGB ICC profile.
+- **Develop camera RAW:** ARW, CR2/CR3, NEF, RAF, ORF, RW2, PEF, DNG and other RAW files
+  are developed in floating point to a wide-gamut 16-bit source. Lightroom/ACR white balance,
+  exposure and orientation from XMP sidecars (or a DNG's embedded XMP) are applied; other
+  Lightroom adjustments are listed per image instead of being guessed.
 - **Export panoramas:** TIFF/BigTIFF, PNG and JPEG, with cancellation, atomic output and
   protection against overwriting source photographs. Large TIFFs render in strips.
 - **Save the work:** `.ssp` projects, relative source paths, Undo/Redo, crash-recovery
@@ -86,7 +90,7 @@ baseline for that binary, not a guarantee for every Linux desktop.
 
 ## First panorama
 
-1. Add overlapping JPEG, PNG, TIFF or WebP images, or drop a folder onto the window.
+1. Add overlapping JPEG, PNG, TIFF, WebP or camera RAW/DNG images, or drop a folder onto the window.
 2. Choose **Auto Align** and inspect the result. Moving skies, water and nearby foreground
    can need different compromises; a low control-point error does not make moving content identical.
 3. Pick a projection, adjust the view and crop. Toggle **Seams** to inspect the contributing frames.
@@ -107,8 +111,14 @@ Sources retain up to 16 bits per channel. **10-bit output uses 1024 levels store
 JPEG supports 8 bits per channel. Higher-bit-depth export cannot recover detail absent from
 8-bit originals. RGB ICC profiles are supported; LUT-only output profiles without RGB tone
 curves are rejected. Transparent and non-RGB sources must be flattened or converted first.
-RAW/DNG decoding, HDR merging and Lightroom/XMP edits are not supported. Development sample
-photographs and camera originals are not distributed.
+Camera RAW development is neutral: as-shot (or Lightroom) white balance, the camera colour
+matrix, exposure and a smooth highlight shoulder, without a camera "look", contrast curve or
+noise reduction. Lightroom tone, presence, HSL, colour grading, profiles, crops and local
+adjustments are not reproduced; each image lists what was applied and what was not. A DNG's
+enhanced image (e.g. Lightroom Denoise) is used when it can be decoded; otherwise the original
+sensor data is developed and the image info says so. Exposure brackets are detected and shown,
+but merging them into HDR is not implemented yet: bracketed frames are stitched individually.
+Development sample photographs and camera originals are not distributed.
 
 Large sources use a disk cache and memory reservations. Limits adapt to memory and disk space;
 maximum source counts and dimensions are safeguards, not promises that every maximum-size
@@ -151,6 +161,9 @@ GitHub Actions builds the four platform/architecture combinations separately. On
 
 SlashStitch is [MIT licensed](LICENSE). Electron/Chromium and Rust dependency notices are
 included in the packages. Lensfun and other third-party components retain their own licenses.
+Camera RAW decoding uses [rawler](https://github.com/dnglab/dnglab) (LGPL-2.1), statically
+linked into the worker; its license text ships with the packages, and because SlashStitch's
+complete source is public, the worker can be rebuilt against a modified rawler.
 The native engine uses wgpu, Rayon, image, moxcms and nalgebra alongside the desktop interface.
 
 ## Support

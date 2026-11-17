@@ -59,3 +59,15 @@ test('a missing executable is reported without a misleading CPU retry',async()=>
  let retries=0;worker.on('event',name=>{if(name==='worker-recovering')retries++;});
  const reply=await worker.request('engine-info');assert.equal(reply.ok,false);assert.match(reply.text,/could not start/);assert.equal(retries,0);await worker.stop();
 });
+test('a normal restart after a CPU restart starts with the configured (GPU) environment again',async()=>{
+ const {worker,trace}=fixture('normal');
+ try{
+  assert.equal(JSON.parse((await worker.request('engine-info')).text).backend,'GPU');
+  const exited=()=>new Promise(resolve=>worker.once('event',function on(name){if(name==='worker-exit')resolve();else worker.once('event',on);}));
+  let gone=exited();assert.equal((await worker.request('crash')).ok,false);await gone;
+  worker.restart({FIXTURE_CPU:'1'});assert.equal(JSON.parse((await worker.request('engine-info')).text).backend,'CPU');
+  gone=exited();assert.equal((await worker.request('crash')).ok,false);await gone;
+  worker.restart();assert.equal(JSON.parse((await worker.request('engine-info')).text).backend,'GPU');
+  assert.equal(trace().filter(x=>x.start).length,3);
+ }finally{await worker.stop();}
+});

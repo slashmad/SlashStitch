@@ -6,22 +6,35 @@ use moxcms::{ColorProfile, DataColorSpace, Layout, TransformOptions};
 use std::io::Write;
 use std::path::Path;
 
-pub const MAX_SOURCE_BYTES: u64 = 768 * 1024 * 1024;
+/// Decode guard per source (16 bytes per pixel of transient decode memory): about 268 MP,
+/// enough for 100+ MP medium-format files. The process memory ceiling (`memory::reserve`)
+/// governs how many large sources decode at once; this only rejects absurd/hostile headers.
+pub const MAX_SOURCE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub type Rgb16Image = ImageBuffer<Rgb<u16>, Vec<u16>>;
 
 pub struct RawDecodedSource {
     pub image_rgb16: Rgb16Image,
     pub icc_profile: Option<Vec<u8>>,
     pub source_bit_depth: u8,
+    /// Non-fatal notes for the image info panel (e.g. a RAW fallback).
+    pub warnings: Vec<String>,
 }
 
 /// Decode a source file at full precision (preserved up to 16 bits/ch) along with its validated
 /// embedded RGB ICC profile bytes if present. Rejects non-opaque alpha and non-RGB ICC profiles.
 pub fn decode_source_raw_16(path: &Path) -> Result<RawDecodedSource, String> {
-    let reader = ImageReader::open(path)
+    if crate::rawdev::is_raw_path(path) {
+        return crate::rawdev::decode_raw_16(path);
+    }
+    let mut reader = ImageReader::open(path)
         .map_err(|e| e.to_string())?
         .with_guessed_format()
         .map_err(|e| e.to_string())?;
+    // The image crate's default 512 MiB allocation limit would reject 16-bit sources above
+    // ~90 MP; use this module's own guard instead.
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_SOURCE_BYTES);
+    reader.limits(limits);
     let mut decoder = reader.into_decoder().map_err(|e| e.to_string())?;
     let (w, h) = decoder.dimensions();
     if w < 2 || h < 2 || u64::from(w) * u64::from(h) * 16 > MAX_SOURCE_BYTES {
@@ -52,6 +65,7 @@ pub fn decode_source_raw_16(path: &Path) -> Result<RawDecodedSource, String> {
         image_rgb16: decoded.into_rgb16(),
         icc_profile,
         source_bit_depth,
+        warnings: Vec::new(),
     })
 }
 

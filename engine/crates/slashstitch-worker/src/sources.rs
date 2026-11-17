@@ -22,19 +22,32 @@ use std::sync::{Arc, Mutex};
 pub struct SourceStamp {
     pub len: u64,
     pub mtime_ns: i128,
+    /// A camera RAW's Lightroom XMP sidecar (size, mtime): editing it changes the development.
+    pub sidecar: Option<(u64, i128)>,
+}
+
+fn file_stamp(meta: &std::fs::Metadata) -> (u64, i128) {
+    let mtime_ns = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i128);
+    (meta.len(), mtime_ns)
 }
 
 impl SourceStamp {
     pub fn of(path: &Path) -> Result<Self, String> {
         let meta = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let mtime_ns = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0, |d| d.as_nanos() as i128);
+        let (len, mtime_ns) = file_stamp(&meta);
+        let sidecar = slashstitch_core::rawdev::is_raw_path(path)
+            .then(|| slashstitch_core::rawdev::find_sidecar(path))
+            .flatten()
+            .and_then(|side| std::fs::metadata(side).ok())
+            .map(|m| file_stamp(&m));
         Ok(Self {
-            len: meta.len(),
+            len,
             mtime_ns,
+            sidecar,
         })
     }
 }
@@ -143,6 +156,9 @@ pub fn decode_budget_bytes() -> u64 {
 
 /// Pixel count from the file header without decoding (falls back to a large estimate).
 pub fn header_pixels(path: &Path) -> u64 {
+    if slashstitch_core::rawdev::is_raw_path(path) {
+        return decode_cost_pixels(path, slashstitch_core::rawdev::raw_pixels(path).max(1));
+    }
     image::ImageReader::open(path)
         .ok()
         .and_then(|r| r.with_guessed_format().ok())
@@ -150,8 +166,16 @@ pub fn header_pixels(path: &Path) -> u64 {
         .map_or(100_000_000, |(w, h)| u64::from(w) * u64::from(h))
 }
 
-/// Split work items (in order) into batches whose summed decode memory fits the budget;
-/// every batch holds at least one item and at most the CPU thread count.
+/// Decode memory of a source expressed in "regular" pixels (`DECODE_BYTES_PER_PX` each):
+/// camera RAW development needs more transient memory per output pixel.
+pub fn decode_cost_pixels(path: &Path, pixels: u64) -> u64 {
+    if slashstitch_core::rawdev::is_raw_path(path) {
+        pixels * slashstitch_core::rawdev::RAW_DECODE_BYTES_PER_PX / DECODE_BYTES_PER_PX
+    } else {
+        pixels
+    }
+}
+
 /// Disk ceiling for the source cache: up to 90 % of the space it could use (free space plus
 /// what it already holds), always leaving at least 2 GiB (and 10 %) free on its filesystem.
 fn cache_limit(free: Option<u64>, held: u64) -> u64 {
@@ -164,6 +188,8 @@ fn cache_limit(free: Option<u64>, held: u64) -> u64 {
     }
 }
 
+/// Split work items (in order) into batches whose summed decode memory fits the budget;
+/// every batch holds at least one item and at most the CPU thread count.
 pub fn budget_batches(pixels: &[u64]) -> Vec<Vec<usize>> {
     let budget = decode_budget_bytes();
     let max_items = rayon::current_num_threads().max(1);
@@ -308,7 +334,12 @@ impl SourceCache {
         }
         let sizes: Vec<u64> = missing
             .iter()
-            .map(|&i| u64::from(images[i].width) * u64::from(images[i].height))
+            .map(|&i| {
+                decode_cost_pixels(
+                    Path::new(&images[i].path),
+                    u64::from(images[i].width) * u64::from(images[i].height),
+                )
+            })
             .collect();
         for batch in budget_batches(&sizes) {
             // Decode memory for the whole batch, reserved before the parallel section (no

@@ -32,12 +32,14 @@ export class WorkerBridge extends EventEmitter {
   private lastExit: {code: number | null; signal: string | null} = {code:null,signal:null};
   private spawnFailed = false;
   private diagnostics = "";
+  // Session overrides (CPU recovery) on top of the configured environment; cleared by restart().
+  private envOverrides: Record<string, string> = {};
   constructor(private command: string, private args: string[], private extraEnv: Record<string, string> = {}, private startupPolicy?: StartupPolicy) { super(); }
 
   private start(): ChildProcessWithoutNullStreams {
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
-    Object.assign(env, this.extraEnv);
+    Object.assign(env, this.extraEnv, this.envOverrides);
     this.lastExit = {code:null,signal:null}; this.spawnFailed = false; this.diagnostics = "";
     const child = spawn(this.command, this.args, { env, stdio: "pipe", windowsHide: true });
     const lines = createInterface({ input: child.stdout });
@@ -110,10 +112,10 @@ export class WorkerBridge extends EventEmitter {
         await this.endStartupChild();
         const first = `${result.text}${this.diagnostics.trim() ? `\n${this.diagnostics.trim()}` : ""}`;
         const retry = !this.startupAborted && !this.stopping && !this.spawnFailed && policy.fallbackEnv &&
-          Object.entries(policy.fallbackEnv).some(([key,value]) => (this.extraEnv[key] ?? process.env[key]) !== value) &&
+          Object.entries(policy.fallbackEnv).some(([key,value]) => (this.envOverrides[key] ?? this.extraEnv[key] ?? process.env[key]) !== value) &&
           (timedOut || policy.retryExitCodes.includes((this.lastExit.code ?? 0) >>> 0));
         if (retry) {
-          Object.assign(this.extraEnv, policy.fallbackEnv); this.unavailable = null;
+          this.envOverrides = {...this.envOverrides, ...policy.fallbackEnv}; this.unavailable = null;
           this.emit("event", "worker-recovering", {text:"Graphics startup failed. Restarting the engine with CPU rendering."});
           result = await this.sendRequest(policy.probeAction, null, policy.timeoutMs);
           if (!result.ok) {
@@ -174,7 +176,9 @@ export class WorkerBridge extends EventEmitter {
   }
   restart(extraEnv: Record<string,string> = {}): void {
     if (this.child || this.initializing) throw new Error("The previous worker has not exited; wait for it to stop before restarting.");
-    Object.assign(this.extraEnv, extraEnv);
+    // Each restart starts from the configured environment: an earlier CPU override (manual or
+    // automatic recovery) must not silently stick to a later normal "Restart Engine".
+    this.envOverrides = {...extraEnv};
     this.unavailable = null;
     this.startupPromise = null; this.startupAborted = false;
   }

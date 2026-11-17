@@ -295,6 +295,13 @@ fn target_mips(
 /// The target profile shared by every source: identical embedded ICC bytes, or the same
 /// colorimetrically verified built-in profile. `None` if any source has no or a different one.
 fn common_source_profile(raw: &[(Arc<Rgb16Image>, Option<Vec<u8>>)]) -> Option<TargetColorProfile> {
+    // Developed camera RAWs carry a linear working profile, which is no export profile.
+    if raw.iter().any(|(_, icc)| {
+        icc.as_deref()
+            .is_some_and(slashstitch_core::rawdev::is_raw_working_icc)
+    }) {
+        return None;
+    }
     let first = raw.first()?.1.as_ref()?;
     if raw
         .iter()
@@ -696,6 +703,8 @@ fn commit(
     }
     // Exposure/vignetting parameters follow geometry automatically.
     refresh_photometric(&mut project)?;
+    // Exposure brackets (HDR stacks) depend on the order and set of sources.
+    slashstitch_core::hdr::assign_brackets(&mut project.metas);
     let doc = project.doc.clone();
     let synced = json!({"images":doc.images,"metas":project.metas,"control_points":doc.control_points,"project":doc});
     let keep: Vec<(String, SourceStamp)> = doc
@@ -967,6 +976,7 @@ fn execute(
                         meta.width = Some(raw.image_rgb16.width());
                         meta.height = Some(raw.image_rgb16.height());
                         meta.bit_depth = Some(raw.source_bit_depth);
+                        meta.warnings.extend(raw.warnings.iter().cloned());
                         let thumb16 = Arc::new(thumbnail_rgb16(&raw.image_rgb16, 1024));
                         let icc = raw.icc_profile;
                         let mips = target_mips(&thumb16, icc.as_deref(), &target)?;
@@ -1138,7 +1148,10 @@ fn execute(
             let sizes: Vec<u64> = to_decode
                 .iter()
                 .map(|&i| {
-                    u64::from(document.images[i].width) * u64::from(document.images[i].height)
+                    sources::decode_cost_pixels(
+                        Path::new(&document.images[i].path),
+                        u64::from(document.images[i].width) * u64::from(document.images[i].height),
+                    )
                 })
                 .collect();
             for batch_idx in sources::budget_batches(&sizes) {
@@ -1163,6 +1176,7 @@ fn execute(
                         meta.width = Some(rw);
                         meta.height = Some(rh);
                         meta.bit_depth = Some(raw.source_bit_depth);
+                        meta.warnings.extend(raw.warnings.iter().cloned());
                         let thumb16 = Arc::new(thumbnail_rgb16(&raw.image_rgb16, 1024));
                         let icc = raw.icc_profile;
                         let mips = target_mips(&thumb16, icc.as_deref(), &target)?;

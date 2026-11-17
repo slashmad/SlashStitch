@@ -12,6 +12,7 @@ libm = "0.2"
 memmap2 = "0.9"
 moxcms = "0.8"
 nalgebra = "0.35"
+rawler = { version = "0.8", default-features = false }
 rayon = "1.12"
 roxmltree = "0.21"
 same-file = "1"
