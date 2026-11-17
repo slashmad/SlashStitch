@@ -7,7 +7,8 @@
 //! 1. black/white scaling to 0..1;
 //! 2. white balance on the mosaic, then a clip at the common saturation point (all channels
 //!    saturate together, so blown highlights stay neutral instead of turning magenta);
-//! 3. demosaicing (PPG for Bayer, bilinear for X-Trans) and the active/default crop;
+//! 3. demosaicing (RCD for Bayer, see `demosaic.rs`; rawler's bilinear for X-Trans) and the
+//!    active/default crop;
 //! 4. camera RGB to linear Rec.2020 (rows normalized so white-balanced neutrals stay neutral;
 //!    no gamut clipping beyond negative values);
 //! 5. exposure (DNG baseline exposure plus Lightroom/ACR `Exposure2012` from XMP) with a smooth
@@ -23,7 +24,9 @@ use rawler::decoders::{Orientation, RawDecodeParams};
 use rawler::formats::tiff::reader::TiffReader;
 use rawler::formats::tiff::{GenericTiffReader, IFD};
 use rawler::imgop::develop::{Intermediate, ProcessingStep, RawDevelop};
+use rawler::imgop::sensor::SensorType;
 use rawler::imgop::xyz::Illuminant;
+use rawler::imgop::{Dim2, Point, Rect};
 use rawler::rawimage::{RawImage, RawImageData, RawPhotometricInterpretation};
 use rawler::rawsource::RawSource;
 use rawler::tags::{DngTag, TiffCommonTag};
@@ -37,9 +40,9 @@ pub const RAW_EXTENSIONS: [&str; 25] = [
     "mos", "mrw", "nef", "nrw", "orf", "pef", "raf", "rw2", "sr2", "srf", "srw", "x3f",
 ];
 
-/// Transient bytes per output pixel while developing (16-bit mosaic, f32 mosaic and a working
-/// copy, f32 RGB after demosaicing, 16-bit output).
-pub const RAW_DECODE_BYTES_PER_PX: u64 = 30;
+/// Transient bytes per output pixel while developing (16-bit and f32 mosaic, RCD planes and
+/// direction maps, f32 RGB, 16-bit output).
+pub const RAW_DECODE_BYTES_PER_PX: u64 = 40;
 
 pub fn is_raw_path(path: &Path) -> bool {
     path.extension()
@@ -425,6 +428,39 @@ pub fn temperature_tint_to_xy(kelvin: f64, tint: f64) -> (f64, f64) {
     (1.5 * u / d, v / d)
 }
 
+/// Inverse of [`temperature_tint_to_xy`] (DNG SDK `dng_temperature::Set_xy_coord`).
+pub fn xy_to_temperature_tint(x: f64, y: f64) -> (f64, f64) {
+    const TINT_SCALE: f64 = -3000.0;
+    let d = 1.5 - x + 6.0 * y;
+    let (u, v) = (2.0 * x / d, 3.0 * y / d);
+    let (mut last_dt, mut last_du, mut last_dv) = (0.0, 0.0, 0.0);
+    for index in 1..=30 {
+        let (_, ui, vi, ti) = ROBERTSON[index];
+        let len = (1.0 + ti * ti).sqrt();
+        let (mut du, mut dv) = (1.0 / len, ti / len);
+        let (uu, vv) = (u - ui, v - vi);
+        let mut dt = -uu * dv + vv * du;
+        if dt <= 0.0 || index == 30 {
+            dt = (-dt).max(0.0);
+            let f = if index == 1 { 0.0 } else { dt / (last_dt + dt) };
+            let (r0, u0, v0, _) = ROBERTSON[index - 1];
+            let (r1, u1, v1, _) = ROBERTSON[index];
+            let kelvin = 1.0e6 / (r0 * f + r1 * (1.0 - f));
+            let uu = u - (u0 * f + u1 * (1.0 - f));
+            let vv = v - (v0 * f + v1 * (1.0 - f));
+            du = du * (1.0 - f) + last_du * f;
+            dv = dv * (1.0 - f) + last_dv * f;
+            let len = (du * du + dv * dv).sqrt();
+            let tint = (uu * du / len + vv * dv / len) * TINT_SCALE;
+            return (kelvin, tint);
+        }
+        last_dt = dt;
+        last_du = du;
+        last_dv = dv;
+    }
+    (6500.0, 0.0)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Development
 
@@ -440,6 +476,8 @@ pub struct RawDevelopInfo {
     pub baseline_exposure_ev: f64,
     /// The DNG holds an enhanced (e.g. Lightroom Denoise) image, which is used.
     pub enhanced: bool,
+    /// The camera's as-shot white balance as (kelvin, tint), when it can be computed.
+    pub as_shot: Option<(f64, f64)>,
 }
 
 fn open_raw(path: &Path, dummy: bool) -> Result<RawImage, String> {
@@ -507,7 +545,20 @@ pub fn raw_info(path: &Path) -> Result<RawDevelopInfo, String> {
         xmp,
         baseline_exposure_ev: dng_baseline_exposure(path),
         enhanced: has_enhanced_image(path),
+        as_shot: as_shot_temperature(&raw),
     })
+}
+
+/// The camera's as-shot white balance expressed as Lightroom-style temperature and tint.
+fn as_shot_temperature(raw: &RawImage) -> Option<(f64, f64)> {
+    let w = raw.wb_coeffs;
+    if !w[..3].iter().all(|v| v.is_finite() && *v > 0.0) {
+        return None;
+    }
+    let neutral =
+        nalgebra::Vector3::new(1.0 / f64::from(w[0]), 1.0, 1.0 / f64::from(w[2])) * f64::from(w[1]);
+    let ((x, y), _) = CameraMatrices::of(raw).ok()?.white_of_neutral(neutral)?;
+    Some(xy_to_temperature_tint(x, y))
 }
 
 /// Output pixel count of a RAW file (0 if it cannot be read).
@@ -518,24 +569,97 @@ pub fn raw_pixels(path: &Path) -> u64 {
     })
 }
 
-/// XYZ→camera matrix for D65 (Bradford-free fallback: the first matrix the file provides).
-fn xyz_to_camera(raw: &RawImage) -> Result<Matrix3<f64>, String> {
-    let (_, m) = raw
-        .color_matrix_find_first([
-            Illuminant::D65,
-            Illuminant::D55,
-            Illuminant::Daylight,
-            Illuminant::D75,
-            Illuminant::D50,
-            Illuminant::Flash,
-            Illuminant::A,
-        ])
-        .or_else(|| raw.color_matrix.iter().next().map(|(i, m)| (*i, m.clone())))
-        .ok_or("This camera has no colour matrix; RAW development is not possible")?;
-    if m.len() < 9 {
-        return Err("Unsupported (four-colour) RAW colour matrix".into());
+/// Correlated colour temperature the DNG SDK assigns to a calibration illuminant.
+fn illuminant_kelvin(i: Illuminant) -> Option<f64> {
+    Some(match i {
+        Illuminant::A | Illuminant::Tungsten => 2850.0,
+        Illuminant::IsoStudioTungsten => 3200.0,
+        Illuminant::WhiteFluorescent => 3450.0,
+        Illuminant::CoolWhiteFluorescent | Illuminant::Fluorescent => 4150.0,
+        Illuminant::D50 | Illuminant::DaylightWhiteFluorescent => 5000.0,
+        Illuminant::D55
+        | Illuminant::Daylight
+        | Illuminant::FineWeather
+        | Illuminant::Flash
+        | Illuminant::B => 5500.0,
+        Illuminant::DaylightFluorescent => 6430.0,
+        Illuminant::D65 | Illuminant::C | Illuminant::CloudyWeather => 6500.0,
+        Illuminant::D75 | Illuminant::Shade => 7500.0,
+        Illuminant::Unknown => return None,
+    })
+}
+
+/// The camera's XYZ→camera matrices: one, or the coolest and warmest calibration pair.
+struct CameraMatrices {
+    /// (kelvin, matrix), warmest (lowest temperature) first.
+    pairs: Vec<(f64, Matrix3<f64>)>,
+}
+
+impl CameraMatrices {
+    fn of(raw: &RawImage) -> Result<Self, String> {
+        let mut all: Vec<(f64, Matrix3<f64>)> = Vec::new();
+        for (illuminant, m) in &raw.color_matrix {
+            if m.len() < 9 {
+                return Err("Unsupported (four-colour) RAW colour matrix".into());
+            }
+            let kelvin = illuminant_kelvin(*illuminant).unwrap_or(6500.0);
+            all.push((kelvin, Matrix3::from_fn(|r, c| f64::from(m[r * 3 + c]))));
+        }
+        all.sort_by(|a, b| a.0.total_cmp(&b.0));
+        all.dedup_by(|a, b| (a.0 - b.0).abs() < 1.0);
+        let pairs = match all.len() {
+            0 => {
+                return Err(
+                    "This camera has no colour matrix; RAW development is not possible".into(),
+                )
+            }
+            1 => all,
+            n => vec![all[0], all[n - 1]],
+        };
+        Ok(Self { pairs })
     }
-    Ok(Matrix3::from_fn(|r, c| f64::from(m[r * 3 + c])))
+
+    /// XYZ→camera at a white point temperature: linear in inverse temperature between the
+    /// two calibrations, clamped outside them (DNG specification).
+    fn at(&self, kelvin: f64) -> Matrix3<f64> {
+        match self.pairs.as_slice() {
+            [(_, m)] => *m,
+            [(t1, m1), (t2, m2), ..] => {
+                let g = if kelvin <= *t1 {
+                    1.0
+                } else if kelvin >= *t2 {
+                    0.0
+                } else {
+                    (1.0 / kelvin - 1.0 / t2) / (1.0 / t1 - 1.0 / t2)
+                };
+                m1 * g + m2 * (1.0 - g)
+            }
+            [] => Matrix3::identity(),
+        }
+    }
+
+    /// White point (xy and temperature) of a camera neutral, iterated as in the DNG SDK: the
+    /// matrix depends on the temperature, which depends on the matrix.
+    fn white_of_neutral(&self, neutral: nalgebra::Vector3<f64>) -> Option<((f64, f64), f64)> {
+        let mut xy = (0.3457, 0.3585); // D50 start
+        let mut kelvin = 5000.0;
+        for _ in 0..30 {
+            let xyz = self.at(kelvin).try_inverse()? * neutral;
+            let sum = xyz.sum();
+            if !(sum.is_finite() && sum > 1e-9) {
+                return None;
+            }
+            let next = (xyz[0] / sum, xyz[1] / sum);
+            let (t, _) = xy_to_temperature_tint(next.0, next.1);
+            let done = (next.0 - xy.0).abs() + (next.1 - xy.1).abs() < 1e-7;
+            xy = next;
+            kelvin = t;
+            if done {
+                break;
+            }
+        }
+        Some((xy, kelvin))
+    }
 }
 
 /// Camera RGB → linear Rec.2020, for white-balanced camera data (dcraw convention: rows of
@@ -557,29 +681,39 @@ fn camera_to_rec2020(xyz_to_cam: &Matrix3<f64>) -> Result<Matrix3<f64>, String> 
         .ok_or_else(|| "Singular RAW colour matrix".into())
 }
 
-/// White-balance multipliers (R, G, B; minimum 1) for the camera.
-fn white_balance(raw: &RawImage, xyz_to_cam: &Matrix3<f64>, xmp: Option<&XmpDevelop>) -> [f64; 3] {
+/// White-balance multipliers (R, G, B; minimum 1) and the XYZ→camera matrix for that white
+/// point: Lightroom temperature/tint if given, else the camera's as-shot balance, else D65.
+fn white_balance(
+    raw: &RawImage,
+    matrices: &CameraMatrices,
+    xmp: Option<&XmpDevelop>,
+) -> ([f64; 3], Matrix3<f64>) {
     let from_neutral = |n: nalgebra::Vector3<f64>| -> Option<[f64; 3]> {
         (n.iter().all(|v| v.is_finite() && *v > 1e-6)).then(|| [1.0 / n[0], 1.0 / n[1], 1.0 / n[2]])
     };
-    let mul = xmp
-        .and_then(|x| x.temperature_tint)
-        .and_then(|(t, tint)| {
-            let (x, y) = temperature_tint_to_xy(t, tint);
-            from_neutral(xyz_to_cam * nalgebra::Vector3::new(x / y, 1.0, (1.0 - x - y) / y))
-        })
-        .or_else(|| {
-            let w = raw.wb_coeffs;
-            (w[..3].iter().all(|v| v.is_finite() && *v > 0.0))
-                .then(|| [f64::from(w[0]), f64::from(w[1]), f64::from(w[2])])
-        })
-        .or_else(|| {
-            // No as-shot balance: neutral for D65.
-            from_neutral(xyz_to_cam * nalgebra::Vector3::new(0.95047, 1.0, 1.08883))
-        })
-        .unwrap_or([1.0; 3]);
-    let min = mul.iter().copied().fold(f64::INFINITY, f64::min);
-    mul.map(|m| m / min)
+    let xyz = |(x, y): (f64, f64)| nalgebra::Vector3::new(x / y, 1.0, (1.0 - x - y) / y);
+    let normalize = |mul: [f64; 3]| {
+        let min = mul.iter().copied().fold(f64::INFINITY, f64::min);
+        mul.map(|m| m / min)
+    };
+    if let Some((t, tint)) = xmp.and_then(|x| x.temperature_tint) {
+        let m = matrices.at(t);
+        if let Some(mul) = from_neutral(m * xyz(temperature_tint_to_xy(t, tint))) {
+            return (normalize(mul), m);
+        }
+    }
+    let w = raw.wb_coeffs;
+    if w[..3].iter().all(|v| v.is_finite() && *v > 0.0) {
+        let mul = [f64::from(w[0]), f64::from(w[1]), f64::from(w[2])];
+        let neutral = nalgebra::Vector3::new(1.0 / mul[0], 1.0 / mul[1], 1.0 / mul[2]);
+        let m = matrices
+            .white_of_neutral(neutral)
+            .map_or_else(|| matrices.at(6500.0), |(_, k)| matrices.at(k));
+        return (normalize(mul), m);
+    }
+    let m = matrices.at(6500.0);
+    let mul = from_neutral(m * xyz((0.3127, 0.3290))).unwrap_or([1.0; 3]);
+    (normalize(mul), m)
 }
 
 /// Exposure with a highlight shoulder: linear up to `KNEE`, then a rational curve that reaches
@@ -596,6 +730,78 @@ fn tone(x: f32, gain: f32, white: f32) -> f32 {
     (KNEE + (1.0 - KNEE) * (s * a / (1.0 + (s - 1.0) * a))).min(1.0)
 }
 
+/// RCD demosaicing of a white-balanced, normalized Bayer mosaic over its active area, then the
+/// default crop. `None` for layouts it does not handle (X-Trans, Fuji rotation, linear data).
+fn rcd_bayer(raw: &RawImage) -> Option<(u32, u32, Vec<f32>)> {
+    let RawPhotometricInterpretation::Cfa(config) = &raw.photometric else {
+        return None;
+    };
+    if config.sensor != SensorType::Bayer
+        || !config.cfa.is_rgb()
+        || raw.fuji_rotation_width.is_some()
+        || raw.cpp != 1
+    {
+        return None;
+    }
+    let RawImageData::Float(data) = &raw.data else {
+        return None;
+    };
+    let full = Rect::new(Point::zero(), Dim2::new(raw.width, raw.height));
+    let roi = raw.active_area.unwrap_or(full);
+    if roi.p.x + roi.d.w > raw.width || roi.p.y + roi.d.h > raw.height {
+        return None;
+    }
+    let (rw, rh) = (roi.d.w, roi.d.h);
+    let mut mosaic = vec![0f32; rw * rh];
+    for (y, row) in mosaic.chunks_mut(rw).enumerate() {
+        let start = (roi.p.y + y) * raw.width + roi.p.x;
+        row.copy_from_slice(&data[start..start + rw]);
+    }
+    let cfa = config.cfa.shift(roi.p.x, roi.p.y);
+    // Bayer patterns repeat every 2×2 sites: a table avoids rawler's general 48×48 lookup.
+    let table = [
+        [cfa.color_at(0, 0).min(2), cfa.color_at(0, 1).min(2)],
+        [cfa.color_at(1, 0).min(2), cfa.color_at(1, 1).min(2)],
+    ];
+    let periodic = cfa.width == 2 && cfa.height == 2;
+    let colour = |y: usize, x: usize| {
+        if periodic {
+            table[y & 1][x & 1]
+        } else {
+            cfa.color_at(y, x).min(2)
+        }
+    };
+    let planes = crate::demosaic::rcd(&mosaic, rw, rh, &colour);
+    drop(mosaic);
+    // The default crop is given in full-sensor coordinates.
+    let crop = match raw.crop_area {
+        Some(c)
+            if c.p.x >= roi.p.x
+                && c.p.y >= roi.p.y
+                && c.p.x + c.d.w <= roi.p.x + rw
+                && c.p.y + c.d.h <= roi.p.y + rh =>
+        {
+            Rect::new(Point::new(c.p.x - roi.p.x, c.p.y - roi.p.y), c.d)
+        }
+        _ => Rect::new(Point::zero(), Dim2::new(rw, rh)),
+    };
+    let mut flat = vec![0f32; crop.d.w * crop.d.h * 3];
+    {
+        use rayon::prelude::*;
+        flat.par_chunks_mut(crop.d.w * 3)
+            .enumerate()
+            .for_each(|(y, row)| {
+                let base = (crop.p.y + y) * rw + crop.p.x;
+                for (x, px) in row.chunks_mut(3).enumerate() {
+                    for c in 0..3 {
+                        px[c] = planes[c][base + x];
+                    }
+                }
+            });
+    }
+    Some((crop.d.w as u32, crop.d.h as u32, flat))
+}
+
 /// Develop a RAW/DNG file into the 16-bit working format (see module docs).
 pub fn decode_raw_16(path: &Path) -> Result<RawDecodedSource, String> {
     let mut raw = open_raw(path, false)?;
@@ -608,9 +814,9 @@ pub fn decode_raw_16(path: &Path) -> Result<RawDecodedSource, String> {
         ));
     }
     let bits = raw.bps.clamp(1, 16) as u8;
-    let xyz_to_cam = xyz_to_camera(&raw)?;
+    let matrices = CameraMatrices::of(&raw)?;
+    let (mul, xyz_to_cam) = white_balance(&raw, &matrices, xmp.as_ref());
     let cam_to_rgb = camera_to_rec2020(&xyz_to_cam)?;
-    let mul = white_balance(&raw, &xyz_to_cam, xmp.as_ref());
     let exposure_ev = dng_baseline_exposure(path) + xmp.as_ref().map_or(0.0, |x| x.exposure_ev);
 
     let mut warnings = Vec::new();
@@ -664,23 +870,28 @@ pub fn decode_raw_16(path: &Path) -> Result<RawDecodedSource, String> {
             return Err("Monochrome RAW files are not supported".into());
         }
     }
-    let develop = RawDevelop::new_with(&[
-        ProcessingStep::Demosaic,
-        ProcessingStep::FujiRotate,
-        ProcessingStep::CropActiveArea,
-        ProcessingStep::CropDefault,
-    ]);
-    let rgb = match develop
-        .develop_intermediate(&raw)
-        .map_err(|e| format!("RAW development failed: {e}"))?
-    {
-        Intermediate::ThreeColor(px) => px,
-        _ => return Err("Unsupported RAW colour layout".into()),
+    let (w, h, flat) = match rcd_bayer(&raw) {
+        Some(result) => result,
+        None => {
+            // X-Trans, Fuji-rotated and linear (demosaiced) data: rawler's pipeline.
+            let develop = RawDevelop::new_with(&[
+                ProcessingStep::Demosaic,
+                ProcessingStep::FujiRotate,
+                ProcessingStep::CropActiveArea,
+                ProcessingStep::CropDefault,
+            ]);
+            let rgb = match develop
+                .develop_intermediate(&raw)
+                .map_err(|e| format!("RAW development failed: {e}"))?
+            {
+                Intermediate::ThreeColor(px) => px,
+                _ => return Err("Unsupported RAW colour layout".into()),
+            };
+            let dim = rgb.dim();
+            (dim.w as u32, dim.h as u32, rgb.flatten())
+        }
     };
-    let dim = rgb.dim();
-    let (w, h) = (dim.w as u32, dim.h as u32);
-    let flat = rgb.flatten();
-    drop(rgb);
+    drop(raw.data);
 
     let m: [[f32; 3]; 3] =
         std::array::from_fn(|r| std::array::from_fn(|c| cam_to_rgb[(r, c)] as f32));
@@ -743,6 +954,57 @@ mod tests {
         let (_, y_tinted) = temperature_tint_to_xy(5000.0, 30.0);
         let (_, y_neutral) = temperature_tint_to_xy(5000.0, 0.0);
         assert!(y_tinted > y_neutral);
+    }
+
+    #[test]
+    fn temperature_and_tint_round_trip() {
+        for (t, tint) in [
+            (2850.0, 0.0),
+            (3200.0, -15.0),
+            (4770.0, 10.0),
+            (6500.0, 0.0),
+            (9000.0, 40.0),
+        ] {
+            let (x, y) = temperature_tint_to_xy(t, tint);
+            let (t2, tint2) = xy_to_temperature_tint(x, y);
+            assert!((t2 - t).abs() < t * 1e-3, "{t} → {t2}");
+            assert!((tint2 - tint).abs() < 0.2, "{tint} → {tint2}");
+        }
+    }
+
+    #[test]
+    fn dual_illuminant_matrices_interpolate_in_inverse_temperature() {
+        let a = Matrix3::from_element(1.0);
+        let d65 = Matrix3::from_element(3.0);
+        let m = CameraMatrices {
+            pairs: vec![(2850.0, a), (6500.0, d65)],
+        };
+        assert_eq!(m.at(2000.0), a);
+        assert_eq!(m.at(8000.0), d65);
+        // Halfway in mired between 2850 K and 6500 K.
+        let mid = 2.0 / (1.0 / 2850.0 + 1.0 / 6500.0);
+        assert!((m.at(mid)[(0, 0)] - 2.0).abs() < 1e-9);
+        // A neutral computed at a temperature is found again by the iteration.
+        let cams = CameraMatrices {
+            pairs: vec![
+                (
+                    2850.0,
+                    Matrix3::new(
+                        0.7683, -0.3276, 0.0299, -0.3630, 1.0892, 0.3018, -0.0337, 0.0965, 0.6553,
+                    ),
+                ),
+                (
+                    6500.0,
+                    Matrix3::new(
+                        0.6640, -0.1847, -0.0503, -0.5238, 1.3010, 0.2474, -0.0993, 0.1673, 0.6527,
+                    ),
+                ),
+            ],
+        };
+        let (x, y) = temperature_tint_to_xy(4000.0, 0.0);
+        let neutral = cams.at(4000.0) * nalgebra::Vector3::new(x / y, 1.0, (1.0 - x - y) / y);
+        let (_, kelvin) = cams.white_of_neutral(neutral).unwrap();
+        assert!((kelvin - 4000.0).abs() < 5.0, "{kelvin}");
     }
 
     #[test]

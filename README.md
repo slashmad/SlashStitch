@@ -111,8 +111,8 @@ Sources retain up to 16 bits per channel. **10-bit output uses 1024 levels store
 JPEG supports 8 bits per channel. Higher-bit-depth export cannot recover detail absent from
 8-bit originals. RGB ICC profiles are supported; LUT-only output profiles without RGB tone
 curves are rejected. Transparent and non-RGB sources must be flattened or converted first.
-Camera RAW development is neutral: as-shot (or Lightroom) white balance, the camera colour
-matrix, exposure and a smooth highlight shoulder, without a camera "look", contrast curve or
+Camera RAW development is neutral: RCD demosaicing, as-shot (or Lightroom) white balance, the
+camera colour matrix, exposure and a smooth highlight shoulder, without a camera "look", contrast curve or
 noise reduction. Lightroom tone, presence, HSL, colour grading, profiles, crops and local
 adjustments are not reproduced; each image lists what was applied and what was not. A DNG's
 enhanced image (e.g. Lightroom Denoise) is used when it can be decoded; otherwise the original

@@ -3,6 +3,7 @@
 
 pub mod blend;
 pub mod color;
+pub mod demosaic;
 pub mod exporter;
 pub mod features;
 pub mod files;

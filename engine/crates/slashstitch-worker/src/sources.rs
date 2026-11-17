@@ -136,8 +136,9 @@ const MIN_LEVEL_LONG_SIDE: u32 = 1400;
 /// copy, colour-converted copy and the first half-resolution level.
 pub const DECODE_BYTES_PER_PX: u64 = 18;
 
-/// Memory allowed for sources decoded concurrently. Large files are decoded fewer at a time
-/// instead of risking memory exhaustion; `SLASHSTITCH_DECODE_BUDGET_MB` overrides.
+/// Memory allowed for sources decoded concurrently: half of the available memory, at most
+/// 32 GiB (`SLASHSTITCH_DECODE_BUDGET_MB` overrides). Large files are decoded fewer at a time;
+/// the process-wide ceiling (`memory::reserve`) still guards the machine as a whole.
 pub fn decode_budget_bytes() -> u64 {
     if let Some(mb) = std::env::var("SLASHSTITCH_DECODE_BUDGET_MB")
         .ok()
@@ -145,11 +146,11 @@ pub fn decode_budget_bytes() -> u64 {
     {
         return mb.max(256) * 1024 * 1024;
     }
-    let mut budget: u64 = 6 * 1024 * 1024 * 1024;
+    let mut budget: u64 = 32 * 1024 * 1024 * 1024;
     let avail = slashstitch_core::memory::available_memory()
         .or_else(|| slashstitch_core::memory::total_memory().map(|t| t / 2));
     if let Some(avail) = avail {
-        budget = budget.min(avail * 2 / 5);
+        budget = budget.min(avail / 2);
     }
     budget.max(512 * 1024 * 1024)
 }

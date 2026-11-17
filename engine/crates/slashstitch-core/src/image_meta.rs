@@ -306,9 +306,12 @@ fn inspect_raw(path: &Path, file_name: String, db: &LensDatabase) -> SourceImage
                     ));
                 }
             }
-            None => warnings.push(
-                "Developed with the camera's as-shot white balance (no Lightroom XMP found)".into(),
-            ),
+            None => warnings.push(match info.as_shot {
+                Some((t, tint)) => format!(
+                    "Developed with the camera's as-shot white balance (about {t:.0} K / tint {tint:+.0}); no Lightroom XMP found"
+                ),
+                None => "Developed with the camera's as-shot white balance (no Lightroom XMP found)".into(),
+            }),
         }
     }
     let (width, height) = info
