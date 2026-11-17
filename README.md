@@ -23,7 +23,7 @@ and React interface provides a live workbench with GPU preview and full-resoluti
 
 ![SlashStitch aligning ten aurora photographs, with source frames, blend seams and optimizer results](docs/images/optimizer.png)
 
-> **Status: early development, 0.1.1.** Linux has been exercised with real image sets and
+> **Status: early development, 0.2.0.** Linux has been exercised with real image sets and
 > local desktop tests. The build workflow also runs native worker tests and produces Windows
 > and macOS packages. Building and automated tests do not qualify every GPU, driver or desktop
 > environment. Windows and macOS installers are unsigned; macOS builds are not notarized.
@@ -80,8 +80,8 @@ Unsigned packages may require approval from Windows SmartScreen or macOS Gatekee
 For the Linux AppImage:
 
 ```sh
-chmod +x SlashStitch-0.1.1-linux-x64.AppImage
-./SlashStitch-0.1.1-linux-x64.AppImage
+chmod +x SlashStitch-0.2.0-linux-x64.AppImage
+./SlashStitch-0.2.0-linux-x64.AppImage
 ```
 
 If FUSE mounting is unavailable, use `--appimage-extract-and-run`. Display libraries and GPU
