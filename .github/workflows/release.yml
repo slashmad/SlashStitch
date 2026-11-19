@@ -1,0 +1,40 @@
+name: Publish CI packages
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release
+        required: true
+        type: string
+      verify_only:
+        description: Verify packages without changing a release
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Install package inspection tools
+        run: sudo apt-get update -qq && sudo apt-get install -y binutils dpkg
+      - name: Verify and publish packages from the tagged CI build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          VERIFY_ONLY: ${{ inputs.verify_only || false }}
+        run: python3 .github/publishing/publish.py

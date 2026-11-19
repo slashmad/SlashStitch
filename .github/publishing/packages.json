@@ -1,0 +1,24 @@
+{
+  "SlashStitch-Linux-X64": {
+    "SlashStitch-VERSION-linux-x64.AppImage": "publish",
+    "SlashStitch-VERSION-linux-x64.deb": "publish",
+    "SlashStitch-VERSION-linux-x64.rpm": "publish",
+    "SlashStitch-VERSION-linux-x64-SHA256SUMS.txt": "verify"
+  },
+  "SlashStitch-Windows-X64": {
+    "SlashStitch-VERSION-win-x64-setup.exe": "publish",
+    "SlashStitch-VERSION-win-x64-portable.exe": "publish",
+    "SlashStitch-VERSION-win-x64.zip": "publish",
+    "SlashStitch-VERSION-win-x64-SHA256SUMS.txt": "verify"
+  },
+  "SlashStitch-macOS-X64": {
+    "SlashStitch-VERSION-mac-x64.dmg": "publish",
+    "SlashStitch-VERSION-mac-x64.zip": "publish",
+    "SlashStitch-VERSION-mac-x64-SHA256SUMS.txt": "verify"
+  },
+  "SlashStitch-macOS-ARM64": {
+    "SlashStitch-VERSION-mac-arm64.dmg": "publish",
+    "SlashStitch-VERSION-mac-arm64.zip": "publish",
+    "SlashStitch-VERSION-mac-arm64-SHA256SUMS.txt": "verify"
+  }
+}
