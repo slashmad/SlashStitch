@@ -41,6 +41,31 @@ def tagged_commit():
     return ref["sha"]
 
 
+def historical_source(tag_sha):
+    """Read the source recorded by an already published release for a read-only audit."""
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{REPO}/releases?per_page=100"))
+    releases = [release for page in pages for release in page if release["tag_name"] == TAG and not release["draft"]]
+    if not releases:
+        return tag_sha
+    release, = releases
+    asset = release_assets(release["id"]).get("BUILD_INFO.json")
+    if asset is None:
+        return tag_sha
+    require(0 < asset["size"] < 1024 * 1024, "Unrecognized BUILD_INFO size")
+    data = subprocess.check_output(["gh", "api", "-H", "Accept: application/octet-stream",
+                                    f"repos/{REPO}/releases/assets/{asset['id']}"])
+    require("sha256:" + hashlib.sha256(data).hexdigest() == asset["digest"], "Changed BUILD_INFO asset")
+    info = json.loads(data)
+    source = info["source_commit"]
+    require(info["version"] == TAG[1:] and re.fullmatch(r"[0-9a-f]{40}", source), "Invalid published build identity")
+    if source != tag_sha:
+        require(api(f"git/commits/{source}")["tree"]["sha"] == api(f"git/commits/{tag_sha}")["tree"]["sha"],
+                "Published build and tag have different source trees")
+        print(f"Read-only historical check: published commit {source} and tag commit {tag_sha} have the same tree",
+              flush=True)
+    return source
+
+
 def build_for(sha):
     for _ in range(120):
         runs = json.loads(gh("run", "list", "-R", REPO, "--workflow", "ci.yml", "--branch", "main",
@@ -128,7 +153,8 @@ def publish(packages, run, sha):
 def main():
     require(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", TAG), "Expected a vMAJOR.MINOR.PATCH tag")
     sha = tagged_commit()
-    run = build_for(sha)
+    verify_only = os.environ.get("VERIFY_ONLY", "").lower() == "true"
+    run = build_for(historical_source(sha) if verify_only else sha)
     with tempfile.TemporaryDirectory() as directory:
         temp = Path(directory)
         packages = collect(run, temp, TAG[1:])
@@ -137,7 +163,7 @@ def main():
         checksums = "".join(f"{digest(path)}  {path.name}\n" for path in sorted(packages.iterdir()))
         (packages / "SHA256SUMS.txt").write_text(checksums)
         print(checksums, flush=True)
-        if os.environ.get("VERIFY_ONLY", "").lower() != "true":
+        if not verify_only:
             publish(packages, run, sha)
 
 
