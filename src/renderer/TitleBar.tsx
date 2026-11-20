@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import licenseText from "../../LICENSE?raw";
 
 /** Keys the main process maps to fixed URLs (see src/main/app-links.ts). */
 type LinkKey = "sponsor" | "bug" | "guide" | "source" | "releases";
@@ -115,7 +116,7 @@ export function TitleBar({
               <img src="./icon-64.png" alt="" width={32} height={32} />
               <div>
                 <strong>SlashStitch</strong>
-                <div className="muted">Version {version} · MIT License</div>
+                <div className="muted">Version {version} · GPLv3</div>
               </div>
             </div>
             <div className="muted about-engine">{engine || "Engine not connected"}</div>
@@ -124,6 +125,11 @@ export function TitleBar({
               <button className="link-button" onClick={() => openLink("releases")}>Releases</button>
               <button className="link-button" onClick={() => openLink("source")}>Source code</button>
             </div>
+            <details className="about-license">
+              <summary>License text</summary>
+              <div>Copyright © 2026 slashmad</div>
+              <pre tabIndex={0} aria-label="License text">{licenseText}</pre>
+            </details>
             <label className="about-check">
               <input type="checkbox" checked={showSponsor} onChange={(e) => onShowSponsor(e.target.checked)} />
               Show the Sponsor button

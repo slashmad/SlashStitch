@@ -10,6 +10,8 @@ files:
 extraResources:
   - from: LICENSE
     to: LICENSE
+  - from: licenses/SlashAPP-MIT.txt
+    to: licenses/SlashAPP-MIT.txt
   - from: build/bin
     to: bin
   - from: build/notices

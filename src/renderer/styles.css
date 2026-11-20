@@ -27,6 +27,10 @@ html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(-
 .titlebar-version { font: 11.5px/1 ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", monospace; color: var(--muted); padding: 0 2px; }
 .titlebar-about { position: relative; display: inline-flex; }
 .about-popover { position: absolute; top: 30px; right: 0; z-index: 60; width: 270px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: var(--shadow); -webkit-app-region: no-drag; user-select: text; cursor: default; }
+.about-popover:has(.about-license[open]) { width: min(460px, 66vw); }
+.about-license summary { cursor: pointer; }
+.about-license[open] > div { margin-top: 8px; }
+.about-license pre { max-height: 45vh; overflow: auto; padding: 8px; margin: 8px 0 0; border: 1px solid var(--line-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .about-head { display: flex; gap: 10px; align-items: center; }
 .about-head img { border-radius: 7px; }
 .about-engine { font-size: 12px; }

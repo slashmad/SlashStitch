@@ -15,7 +15,7 @@
 </p>
 
 ![Build and package](https://img.shields.io/github/actions/workflow/status/slashmad/SlashStitch/ci.yml?style=flat-square)
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
+[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
 SlashStitch brings image alignment, lens correction, projection, cropping and panorama export
 into one desktop application. A native Rust engine handles the image processing; the Electron
@@ -23,7 +23,7 @@ and React interface provides a live workbench with GPU preview and full-resoluti
 
 ![SlashStitch aligning ten aurora photographs, with source frames, blend seams and optimizer results](docs/images/optimizer.png)
 
-> **Status: early development, 0.2.1.** Linux has been exercised with real image sets and
+> **Status: early development, 1.0.0.** Linux has been exercised with real image sets and
 > local desktop tests. The build workflow also runs native worker tests and produces Windows
 > and macOS packages. Building and automated tests do not qualify every GPU, driver or desktop
 > environment. Windows and macOS installers are unsigned; macOS builds are not notarized.
@@ -82,8 +82,8 @@ Unsigned packages may require approval from Windows SmartScreen or macOS Gatekee
 For the Linux AppImage:
 
 ```sh
-chmod +x SlashStitch-0.2.1-linux-x64.AppImage
-./SlashStitch-0.2.1-linux-x64.AppImage
+chmod +x SlashStitch-1.0.0-linux-x64.AppImage
+./SlashStitch-1.0.0-linux-x64.AppImage
 ```
 
 If FUSE mounting is unavailable, use `--appimage-extract-and-run`. Display libraries and GPU
@@ -165,11 +165,14 @@ GitHub Actions builds the four platform/architecture combinations separately. On
 
 ## License and credits
 
-SlashStitch is [MIT licensed](LICENSE). Electron/Chromium and Rust dependency notices are
+SlashStitch is licensed under the [GNU General Public License, version 3](LICENSE).
+The [SlashAPP workbench template notice](licenses/SlashAPP-MIT.txt) is included in the packages. Electron/Chromium and Rust dependency notices are
 included in the packages. Lensfun and other third-party components retain their own licenses.
-Camera RAW decoding uses [rawler](https://github.com/dnglab/dnglab) (LGPL-2.1), statically
-linked into the worker; its license text ships with the packages, and because SlashStitch's
-complete source is public, the worker can be rebuilt against a modified rawler.
+Camera RAW decoding uses [rawler 0.8.0](https://crates.io/crates/rawler/0.8.0) (LGPL-2.1),
+statically linked into the worker. Its license text ships with the packages.
+To rebuild the worker with a modified rawler, use the tagged SlashStitch source,
+add a local rawler path under `[patch.crates-io]` in `engine/Cargo.toml`, and run
+`npm run build:engine` with the prerequisites above.
 The native engine uses wgpu, Rayon, image, moxcms and nalgebra alongside the desktop interface.
 
 ## Support

@@ -1,4 +1,5 @@
 """Verify the native manifests and record the four packaged worker identities."""
+from base64 import b64decode
 import hashlib
 import json
 from pathlib import Path
@@ -10,7 +11,8 @@ from zipfile import ZipFile
 from publish import ROOT, api, digest, require
 
 
-def worker_info(read, package, platform, arch):
+def worker_info(read, package, platform, arch, project_license):
+    require(read("LICENSE").replace(b"\r\n", b"\n") == project_license, f"Wrong project license in {package}")
     metadata = json.loads(read("bin/engine-build.json"))
     worker = read("bin/slashstitch-worker" + (".exe" if platform == "win32" else ""))
     licenses = json.loads(read("licenses/rust-dependencies.json"))
@@ -29,6 +31,7 @@ def worker_info(read, package, platform, arch):
 
 
 def validate(packages, version, run):
+    project_license = b64decode(api(f"contents/LICENSE?ref={run['head_sha']}")["content"])
     layout = json.loads((ROOT / "packages.json").read_text())
     assets = []
     for artifact, entries in layout.items():
@@ -43,14 +46,15 @@ def validate(packages, version, run):
     with TemporaryDirectory() as tmp:
         subprocess.run(["dpkg-deb", "-x", deb, tmp], check=True)
         metadata, = Path(tmp).rglob("resources/bin/engine-build.json")
-        workers.append(worker_info(lambda n: (metadata.parents[1] / n).read_bytes(), deb.name, "linux", "x64"))
+        workers.append(worker_info(lambda n: (metadata.parents[1] / n).read_bytes(), deb.name, "linux", "x64", project_license))
     for archive in sorted(packages.glob("*.zip")):
         with ZipFile(archive) as z:
             suffix = "bin/engine-build.json"
             metadata, = [name for name in z.namelist() if name.lower().endswith("resources/" + suffix)]
             platform = "win32" if "-win-" in archive.name else "darwin"
             arch = "arm64" if "-arm64." in archive.name else "x64"
-            workers.append(worker_info(lambda n: z.read(metadata[:-len(suffix)] + n), archive.name, platform, arch))
+            workers.append(worker_info(lambda n: z.read(metadata[:-len(suffix)] + n), archive.name, platform, arch, project_license))
+    print("Verified packaged LICENSE against the build commit on all four platforms", flush=True)
     jobs = api(f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs")["jobs"]
     require({j["name"] for j in jobs if j["conclusion"] == "success"} ==
             {"Linux x64", "Windows x64", "macOS x64", "macOS arm64"}, "Native job matrix differs")
