@@ -15,6 +15,7 @@
 </p>
 
 ![Build and package](https://img.shields.io/github/actions/workflow/status/slashmad/SlashStitch/ci.yml?style=flat-square)
+[![Latest release](https://img.shields.io/github/v/release/slashmad/SlashStitch?style=flat-square&label=latest%20release)](https://github.com/slashmad/SlashStitch/releases/latest)
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
 SlashStitch brings image alignment, lens correction, projection, cropping and panorama export
