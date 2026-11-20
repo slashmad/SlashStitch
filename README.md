@@ -14,8 +14,8 @@
   <a href="https://github.com/slashmad/SlashStitch/issues">Report a problem</a>
 </p>
 
-![Build and package](https://github.com/slashmad/SlashStitch/actions/workflows/ci.yml/badge.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Build and package](https://img.shields.io/github/actions/workflow/status/slashmad/SlashStitch/ci.yml?style=flat-square)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
 
 SlashStitch brings image alignment, lens correction, projection, cropping and panorama export
 into one desktop application. A native Rust engine handles the image processing; the Electron
@@ -176,6 +176,6 @@ The native engine uses wgpu, Rayon, image, moxcms and nalgebra alongside the des
 
 If SlashStitch is useful to you, you can support its development:
 
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slashmad)
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20beer-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/slashmad)
-[![Liberapay](https://img.shields.io/badge/Liberapay-donate-F6C915?logo=liberapay&logoColor=black)](https://liberapay.com/slashmad/)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-EA4AAA?logo=githubsponsors&logoColor=white&style=flat-square)](https://github.com/sponsors/slashmad)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20beer-FF5E5B?logo=ko-fi&logoColor=white&style=flat-square)](https://ko-fi.com/slashmad)
+[![Liberapay](https://img.shields.io/badge/Liberapay-donate-F6C915?logo=liberapay&logoColor=black&style=flat-square)](https://liberapay.com/slashmad/)
